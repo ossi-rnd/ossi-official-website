@@ -1,0 +1,276 @@
+@import 'tailwindcss';
+
+/* Dark mode follows a `.dark` class on <html> (toggle in the top bar), not only the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../views';
+@source '../../app/Support';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../vendor/livewire/livewire/src/Features/SupportPagination/views/*.blade.php';
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+
+[x-cloak] {
+    display: none !important;
+}
+
+/*
+ * Organization chart connectors. A row's cells each get a stub up to a shared
+ * bar (first and last cut at their middle); a --join row draws them downwards,
+ * to bring two boxes back into one.
+ */
+.org-chart {
+    --org-line: var(--color-gray-300);
+}
+
+.dark .org-chart {
+    --org-line: var(--color-gray-600);
+}
+
+.org-line {
+    width: 1px;
+    height: 1.25rem;
+    background: var(--org-line);
+}
+
+.org-row {
+    display: flex;
+    justify-content: center;
+}
+
+.org-row > .org-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.25rem 0.5rem 0;
+}
+
+.org-row > .org-cell::before,
+.org-row > .org-cell::after {
+    content: '';
+    position: absolute;
+    top: 0;
+}
+
+.org-row > .org-cell::before {
+    left: 50%;
+    height: 1.25rem;
+    border-left: 1px solid var(--org-line);
+}
+
+.org-row > .org-cell::after {
+    left: 0;
+    right: 0;
+    border-top: 1px solid var(--org-line);
+}
+
+.org-row > .org-cell:first-child::after {
+    left: 50%;
+}
+
+.org-row > .org-cell:last-child::after {
+    right: 50%;
+}
+
+.org-row > .org-cell:only-child::after {
+    display: none;
+}
+
+/* The Board of Directors box: a hexagon. clip-path cuts the outline too, so the outline is a
+   hexagon in the line colour with the card's hexagon 1px inside it. */
+.org-hexagon {
+    --org-hex: polygon(18% 0, 82% 0, 100% 50%, 82% 100%, 18% 100%, 0 50%);
+    clip-path: var(--org-hex);
+    background: var(--org-line);
+    padding: 1px;
+}
+
+.org-hexagon > * {
+    clip-path: var(--org-hex);
+}
+
+/*
+ * Any other button busy with what it started (Livewire sets data-loading; plain forms get it from
+ * form-loading.js): row actions like Edit or Remove, the logout item. Dimmed, no second click.
+ * <x-ui.button> (.group) shows a spinner instead.
+ */
+button[data-loading]:not(.group) {
+    opacity: 0.6;
+    pointer-events: none;
+    cursor: progress;
+}
+
+/*
+ * A handful of shared classes for things every table and form repeats.
+ * Everything else stays as utilities in Blade, next to the markup it styles.
+ */
+@layer components {
+    .ui-card {
+        @apply rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900;
+    }
+
+    .ui-card-header {
+        @apply flex flex-col gap-3 border-b border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-800;
+    }
+
+    /* `relative`: a <span class="sr-only"> header is position:absolute, and without a
+       positioned ancestor INSIDE the overflow-x-auto wrapper it escapes the scroll box
+       and widens the whole page on phones. */
+    .ui-table {
+        @apply relative min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800;
+    }
+
+    .ui-table thead {
+        @apply bg-gray-50 dark:bg-gray-800/50;
+    }
+
+    .ui-table tbody {
+        @apply divide-y divide-gray-100 dark:divide-gray-800;
+    }
+
+    .ui-th {
+        @apply px-4 py-2 text-left font-medium whitespace-nowrap text-gray-500 dark:text-gray-400;
+    }
+
+    .ui-td {
+        @apply px-4 py-2.5 text-gray-600 dark:text-gray-300;
+    }
+
+    .ui-field {
+        @apply mt-1 block min-h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100;
+    }
+
+    .ui-label {
+        @apply block text-sm font-medium text-gray-700 dark:text-gray-300;
+    }
+
+    .ui-section-label {
+        @apply text-xs font-semibold tracking-wide text-gray-500 uppercase dark:text-gray-400;
+    }
+}
+
+/*
+ * Modal open/close. Livewire's wire:transition hands these names to the
+ * View Transitions API: "old" is the snapshot leaving, "new" the one arriving.
+ * Opening plays only ::view-transition-new, closing only ::view-transition-old.
+ */
+/* Always "both": the transition can outlive a 150ms fade (the browser's root animation runs ~250ms),
+   and without a fill mode the leaving snapshot snaps back to full opacity until it ends: a flicker. */
+@keyframes modal-fade-in { from { opacity: 0; } }
+@keyframes modal-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modal-panel-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
+@keyframes modal-panel-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px) scale(0.98); } }
+
+/* The bar under Office staff / Guards while the other list loads (partials/staff-kind-tabs).
+   Sliding, or a still full-width bar for those who asked for less motion. */
+@keyframes tab-loading { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.tab-loading-bar { animation: tab-loading 0.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+    .tab-loading-bar { width: 100%; animation: none; opacity: 0.6; }
+}
+
+/*
+ * While a modal stays open, every Livewire update (typing, a validation error)
+ * also runs a view transition. Those must be instant, or the panel would replay
+ * its entrance on each keystroke. :only-child = only one snapshot exists, which
+ * means a real open (new only) or a real close (old only).
+ */
+::view-transition-group(modal-backdrop),
+::view-transition-group(modal-panel),
+::view-transition-old(modal-backdrop),
+::view-transition-new(modal-backdrop),
+::view-transition-old(modal-panel),
+::view-transition-new(modal-panel) {
+    animation: none;
+}
+
+/*
+ * ...and the old snapshot is hidden. Without this, an update while open (switching
+ * Field / Office staff) shows old and new on top of each other for the browser's
+ * 250ms: two 60% backdrops make the page flash darker, and a panel that got shorter
+ * shows its old, taller self underneath.
+ *
+ * Hidden always, not only beside a new one: Chrome matches `:only-child` on these
+ * snapshots but never `:not(:only-child)`. A real close still shows it: its
+ * fade-out keyframes start from opacity 1 and override this while they run.
+ */
+::view-transition-old(modal-backdrop),
+::view-transition-old(modal-panel) {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    ::view-transition-new(modal-backdrop):only-child { animation: modal-fade-in 200ms ease-out both; }
+    ::view-transition-old(modal-backdrop):only-child { animation: modal-fade-out 150ms ease-in both; }
+    ::view-transition-new(modal-panel):only-child { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+    ::view-transition-old(modal-panel):only-child { animation: modal-panel-out 150ms ease-in both; }
+
+    /* Alpine-only overlays (the clock-in camera) use the same motion with plain CSS. */
+    .ui-pop { animation: modal-fade-in 200ms ease-out both; }
+    .ui-pop .ui-pop-panel { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+    .ui-pop.ui-pop-closing { animation: modal-fade-out 150ms ease-in forwards; }
+    .ui-pop.ui-pop-closing .ui-pop-panel { animation: modal-panel-out 150ms ease-in forwards; }
+
+    /* Browsers without View Transitions still get a soft open. */
+    @supports not (view-transition-name: none) {
+        .ui-modal-backdrop { animation: modal-fade-in 200ms ease-out both; }
+        .ui-modal-panel { animation: modal-panel-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+    }
+}
+
+/* The rest of the page doesn't take part: no full-page crossfade behind the modal. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+}
+
+/* Personal data (<x-sensitive>) never prints: the page prints a notice in its place. */
+@media print {
+    [data-sensitive] > * { visibility: hidden !important; }
+    [data-sensitive]::before {
+        content: 'This page contains personal data and cannot be printed.';
+        display: block;
+        padding: 2rem;
+        font: 600 14px system-ui, sans-serif;
+    }
+}
+
+/*
+ * Scrollbars everywhere: thin, a faint thumb on a transparent track, a little
+ * stronger while you hover the area that scrolls.
+ *
+ * Set on EVERY element, not just :root. scrollbar-color is inherited, and
+ * :hover also matches <html> and <body>, so an inherited hover colour would
+ * darken every scrollbar on the page as soon as the mouse is anywhere on it.
+ * Chrome, Edge and Firefox use the standard properties; Safari, which lacks
+ * them, gets the same look from the ::-webkit-scrollbar rules below.
+ */
+:root {
+    --scrollbar-thumb: rgb(107 114 128 / 0.25);
+    --scrollbar-thumb-hover: rgb(107 114 128 / 0.5);
+}
+
+.dark {
+    --scrollbar-thumb: rgb(255 255 255 / 0.12);
+    --scrollbar-thumb-hover: rgb(255 255 255 / 0.28);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*:hover {
+    scrollbar-color: var(--scrollbar-thumb-hover) transparent;
+}
+
+@supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 9999px; background: var(--scrollbar-thumb) padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover) padding-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+}
