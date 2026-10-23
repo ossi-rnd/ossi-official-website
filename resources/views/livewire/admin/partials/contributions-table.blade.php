@@ -59,7 +59,7 @@
                         </td>
                     @endif
                     <td class="ui-td text-right">
-                        <button type="button" wire:click="viewPayslip({{ $employee->id }})" aria-label="See how {{ $employee->name }}'s contributions were computed" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600 dark:hover:text-blue-400"><x-icon name="eye" class="h-4 w-4" /></button>
+                        <button type="button" wire:click="viewPayslip({{ $employee->id }})" aria-label="See how {{ $employee->name }}'s contributions were computed" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 hover:text-blue-600 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-blue-400"><x-icon name="eye" class="h-4 w-4" /></button>
                     </td>
                 </tr>
             @endforeach

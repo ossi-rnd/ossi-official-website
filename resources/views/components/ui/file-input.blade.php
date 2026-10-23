@@ -30,7 +30,7 @@
     <div @class([
         'relative mt-1 flex h-16 items-center gap-3 overflow-hidden rounded-lg border border-dashed px-3 transition-colors focus-within:ring-2 focus-within:ring-blue-500',
         'border-red-400 bg-red-50/40 dark:border-red-500/50 dark:bg-red-500/5' => $hasError,
-        'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50/40 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-500/60' => ! $hasError,
+        'border-gray-300 bg-white hover:border-blue-400 hover:bg-blue-50/40 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-500/60 dark:hover:bg-blue-500/10' => ! $hasError,
     ])>
         {{-- The whole box opens the file picker... --}}
         <label for="{{ $id }}" class="absolute inset-0 cursor-pointer" x-bind:class="uploading && 'pointer-events-none'">

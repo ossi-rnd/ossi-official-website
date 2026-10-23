@@ -34,6 +34,35 @@ it('gives every coloured text a dark-mode colour', function () {
     expect($missing)->toBe([]);
 });
 
+it('never lights up a background on hover in dark mode', function () {
+    // hover:bg-gray-50 (or white, or any -50/-100/-200 tint) is right on white, but in dark mode
+    // it flashes a light chip on a dark card ("Common hours"). Such a list must also say its
+    // dark-mode hover. Checks class="..." and class-only strings (@class, x-bind:class).
+    // A see-through white (hover:bg-white/25) is left out: it's for buttons on the photo
+    // lightbox, which is dark in both themes.
+    $views = dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'resources'.DIRECTORY_SEPARATOR.'views';
+    $missing = [];
+
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($views)) as $file) {
+        if (! str_ends_with((string) $file, '.blade.php')) {
+            continue;
+        }
+
+        $source = (string) file_get_contents((string) $file);
+        preg_match_all('/class="([^"\n{}]*)"/', $source, $attributes);
+        preg_match_all("/'([^'\\n]*)'/", $source, $quoted);
+        $classOnly = array_filter($quoted[1], fn (string $text) => preg_match('/^[\w:\-\/\[\]\.!%#&>*~=()]+(?: +[\w:\-\/\[\]\.!%#&>*~=()]+)*$/', trim($text)) === 1);
+
+        foreach ([...$attributes[1], ...$classOnly] as $list) {
+            if (preg_match('/(?<![\w:-])hover:bg-(?:white(?!\/)|\w+-(?:50|100|200))(?![\w-])/', $list) === 1 && ! str_contains($list, 'dark:hover:bg-')) {
+                $missing[] = str_replace($views.DIRECTORY_SEPARATOR, '', (string) $file).': '.$list;
+            }
+        }
+    }
+
+    expect($missing)->toBe([]);
+});
+
 it('never darkens text on hover in dark mode', function () {
     // hover:text-gray-700/800/900 is right on white, but on a dark card it nearly vanishes
     // ("Set date", back links). Such a list must also say its dark-mode hover.

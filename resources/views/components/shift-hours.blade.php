@@ -28,7 +28,7 @@
         <div class="flex flex-wrap gap-1.5">
             @foreach ([['06:00', '15:00', '6–3'], ['07:00', '16:00', '7–4'], ['08:00', '17:00', '8–5'], ['09:00', '18:00', '9–6'], ['22:00', '07:00', '10 PM–7 AM']] as [$from, $to, $label])
                 <button type="button" x-on:click="start = @js($from); end = @js($to)"
-                    x-bind:class="start === @js($from) && end === @js($to) ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200'"
+                    x-bind:class="start === @js($from) && end === @js($to) ? 'border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800'"
                     class="rounded-full border px-2.5 py-1 text-xs font-medium">{{ $label }}</button>
             @endforeach
         </div>

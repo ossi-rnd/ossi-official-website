@@ -30,7 +30,7 @@
                                 <div class="org-line"></div>
                                 @include('livewire.admin.partials.org-box', ['box' => $chart['satellite'], 'tone' => 'blue'])
                                 <div class="org-line"></div>
-                                <a href="#field" class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-500/30 dark:bg-gray-900 dark:text-blue-300">
+                                <a href="#field" class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-500/30 dark:bg-gray-900 dark:text-blue-300 dark:hover:bg-blue-500/10">
                                     Regional → Provincial → clients
                                     <x-icon name="chevron-down" class="h-3.5 w-3.5" />
                                 </a>

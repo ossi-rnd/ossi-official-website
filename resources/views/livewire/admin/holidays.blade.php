@@ -2,9 +2,9 @@
     <x-ui.card :title="'Holidays '.$year" description="A worked regular holiday adds 100% of the daily rate; a special non-working day adds 30%. Unworked holidays add nothing.">
         <x-slot:actions>
             <div class="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-1 py-0.5 dark:border-gray-700">
-                <button type="button" wire:click="$set('year', {{ $year - 1 }})" aria-label="Previous year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50"><x-icon name="chevron-left" class="h-4 w-4" /></button>
+                <button type="button" wire:click="$set('year', {{ $year - 1 }})" aria-label="Previous year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/10"><x-icon name="chevron-left" class="h-4 w-4" /></button>
                 <span class="px-1 text-sm font-medium">{{ $year }}</span>
-                <button type="button" wire:click="$set('year', {{ $year + 1 }})" aria-label="Next year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50"><x-icon name="chevron-right" class="h-4 w-4" /></button>
+                <button type="button" wire:click="$set('year', {{ $year + 1 }})" aria-label="Next year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/10"><x-icon name="chevron-right" class="h-4 w-4" /></button>
             </div>
             <x-ui.button type="button" variant="dark" size="sm" wire:click="create"><x-icon name="calendar-plus" class="h-4 w-4" /> Add holiday</x-ui.button>
         </x-slot:actions>

@@ -110,7 +110,7 @@
                             <span @class([
                                 'block rounded-lg border px-3 py-2 text-center text-sm font-medium peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500',
                                 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300' => $endorseRecommends === $value,
-                                'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200' => $endorseRecommends !== $value,
+                                'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/10' => $endorseRecommends !== $value,
                             ])>{{ $label }}</span>
                         </label>
                     @endforeach

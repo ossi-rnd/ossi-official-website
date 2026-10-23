@@ -4,6 +4,17 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Dark mode: no more white flash on hover**
+- **The bug:** the "Common hours" chips on the shift picker turned white when hovered in dark mode. They had a light hover (`hover:bg-gray-50`) and no dark one, written inside an Alpine `x-bind:class` string.
+- **New check:** `DarkModeColorsTest` now fails on any light hover background (`hover:bg-white`, `-50`, `-100`, `-200`) without a `dark:hover:bg-…`, in `class="…"` and in class-only strings. See-through white on the photo lightbox is allowed, since that overlay is dark in both themes.
+- **It found 12 more:**
+  - the "Choose file" area;
+  - the icon buttons on Holidays, Attendance History, Payroll and Contributions;
+  - a Leave Requests button;
+  - the Organization chips;
+  - the avatar upload button.
+- **The fix:** all of them now have a dark hover, and the chosen chip darkens slightly on hover. CSS rebuilt.
+
 **Demo accounts: President and Vice President, no more "Executive"**
 - **The accounts:** the seeded `executive@example.test` is now `president@example.test`, and there's a new `vp@example.test`. Neither has an employee record, matching the real accounts. The old account also carried the retired "President" position.
 - **Docs updated:**

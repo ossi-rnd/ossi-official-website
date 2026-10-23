@@ -13,7 +13,7 @@
         @endif
 
         <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-            <label x-bind:class="uploading && 'pointer-events-none opacity-60'" class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+            <label x-bind:class="uploading && 'pointer-events-none opacity-60'" class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
                 <x-icon name="camera" class="h-4 w-4" /> Choose photo
                 <input type="file" wire:model="avatar" accept="image/jpeg,image/png,image/webp" class="sr-only">
             </label>

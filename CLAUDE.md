@@ -19,7 +19,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 - Never show the word **"Executive"**. Say President / Vice President ("the President or Vice President", or "President or VP" where tight). New leadership features use `...Role::leadership()`.
 - One **blue primary button** per screen. Colour only for warnings (amber / red); "done" states are blue or gray, not green.
 - Keep icons on buttons, unless the owner asks to remove one (they removed the plus on "Add radio").
-- Every `dark:bg` needs a `dark:hover`. Coloured text 500-700 needs a `dark:text-…-400`. A `hover:text-gray-700/800/900` needs a `dark:hover:text-…`. `tests/Unit/DarkModeColorsTest.php` enforces these.
+- Every `dark:bg` needs a `dark:hover`; a light hover background (`hover:bg-white`, `-50`, `-100`, `-200`) always needs a `dark:hover:bg-…`, also inside `x-bind:class` / `@class` strings. Coloured text 500-700 needs a `dark:text-…-400`. A `hover:text-gray-700/800/900` needs a `dark:hover:text-…`. `tests/Unit/DarkModeColorsTest.php` enforces all of these. Run `npm run build` after adding classes.
 - Error pages (403/404/419/500/503) are always full screen, even from a Livewire click (`resources/js/error-pages.js`).
 - Clean input: government IDs are digits in the agency's format (`App\Support\GovernmentId`). Phones and names go through `App\Support\PhilippineFormats`. Fields drop wrong characters as they're typed, and the server checks again.
 
@@ -36,7 +36,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 
 1. Pint (`vendor/bin/pint <paths>`; `--dirty` needs git), PHPStan (`vendor/bin/phpstan analyse --memory-limit=1G`), and the **full** suite (`php artisan test --parallel`) all pass. Run `php artisan view:cache` after Blade edits, and `npm run build` after JS or CSS changes.
 2. `docs/CHANGELOG.md` gets an entry under today's date, and the right `docs/features/*.md` is updated.
-3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 164 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
+3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 165 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
 4. Mention honestly anything that went wrong, and how it was fixed.
 
 ## Safety rules (learned the hard way)

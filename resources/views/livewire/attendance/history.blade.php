@@ -27,22 +27,22 @@
                 </div>
             @elseif ($mode === 'month')
                 <div class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-0.5 dark:border-gray-800 dark:bg-gray-900">
-                    <button type="button" wire:click="previousMonth" aria-label="Previous month" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50"><x-icon name="chevron-left" class="h-4 w-4" /></button>
+                    <button type="button" wire:click="previousMonth" aria-label="Previous month" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/10"><x-icon name="chevron-left" class="h-4 w-4" /></button>
                     <span class="min-w-28 px-1 text-center text-sm font-medium text-gray-700 dark:text-gray-200">{{ \Carbon\CarbonImmutable::parse($month.'-01')->format('F Y') }}</span>
                     @if ($month === today()->format('Y-m'))
                         <x-ui.tooltip text="This is the current month. Later months have no attendance yet." align="end"><button type="button" disabled aria-label="Next month" class="cursor-not-allowed rounded-md p-1.5 text-gray-500 opacity-30"><x-icon name="chevron-right" class="h-4 w-4" /></button></x-ui.tooltip>
                     @else
-                        <button type="button" wire:click="nextMonth" aria-label="Next month" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50"><x-icon name="chevron-right" class="h-4 w-4" /></button>
+                        <button type="button" wire:click="nextMonth" aria-label="Next month" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/10"><x-icon name="chevron-right" class="h-4 w-4" /></button>
                     @endif
                 </div>
             @else
                 <div class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-0.5 dark:border-gray-800 dark:bg-gray-900">
-                    <button type="button" wire:click="previousYear" aria-label="Previous year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50"><x-icon name="chevron-left" class="h-4 w-4" /></button>
+                    <button type="button" wire:click="previousYear" aria-label="Previous year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/10"><x-icon name="chevron-left" class="h-4 w-4" /></button>
                     <span class="min-w-14 px-1 text-center text-sm font-medium text-gray-700 dark:text-gray-200">{{ $year }}</span>
                     @if ($year >= today()->year)
                         <x-ui.tooltip text="This is the current year. Later years have no attendance yet." align="end"><button type="button" disabled aria-label="Next year" class="cursor-not-allowed rounded-md p-1.5 text-gray-500 opacity-30"><x-icon name="chevron-right" class="h-4 w-4" /></button></x-ui.tooltip>
                     @else
-                        <button type="button" wire:click="nextYear" aria-label="Next year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50"><x-icon name="chevron-right" class="h-4 w-4" /></button>
+                        <button type="button" wire:click="nextYear" aria-label="Next year" class="rounded-md p-1.5 text-gray-500 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-white/10"><x-icon name="chevron-right" class="h-4 w-4" /></button>
                     @endif
                 </div>
             @endif
