@@ -4,6 +4,20 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Speed at 5,000 employees (load test on a copy of the pilot)**
+- **The test:** 5,000 sample guards with 13 days each (65,000 time logs) and a Processing run, on a separate copy (`database/loadtest.sqlite`, to delete after). The pilot was untouched.
+- **What was measured:** each page rendered with every query timed. The test server has PHP's code cache off (`opcache.enable_cli=0`), so whole-page times there are slower than a real server.
+
+| Page | Before | After | What changed |
+|---|---|---|---|
+| Payroll run (5,000 people) | 1,813 ms | **335 ms** | "Who has no daily rate" loaded every employee, their rates and position history. Now the database first narrows it to people with no personal rate in force (a personal rate always wins), so at 5,000 it checks almost no one. |
+| Attendance Log | 541 ms | **237 ms** | New index on `time_logs.clock_out_at` (migration `2026_10_23_100007`). Finding open shifts no longer scans every time log, and the attendance alerts, which run the same lookup every 5 minutes, benefit too. |
+| Employees | 101 ms | 101 ms | Already fine. |
+
+- **"Generate all" for 5,000:** 146 s in the background (about 29 ms per payslip, 1,000 every ~28 s). Fine as a background job.
+- **Database:** the index migration was run on dev and the pilot after backups. The test copy was migrated too.
+- **Tests:** 192 payroll and attendance tests, and the full suite, pass.
+
 **Payroll: "Generate all" in the background, with a progress bar**
 - **Why:** the owner asked about 2,000+ employees. "Generate all" built every payslip inside one click: fine for a few hundred, but at thousands the page would hang and could time out partway.
 - **Now:**

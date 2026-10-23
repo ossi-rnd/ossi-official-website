@@ -240,7 +240,12 @@ class Payroll extends Component
             return null;
         }
 
-        $employees = User::query()->onPayroll()->with('employeeProfile')->orderBy('name')->get(['id', 'name']);
+        // Only people with no personal rate in force can lack one (a personal rate always wins), so
+        // the database narrows it first: at 5,000 employees, loading everyone took over a second.
+        $date = $this->selectedRun->start_date->toDateString();
+        $employees = User::query()->onPayroll()
+            ->whereDoesntHave('employeeProfile.rates', fn ($rates) => $rates->whereDate('effective_from', '<=', $date))
+            ->with('employeeProfile')->orderBy('name')->get(['id', 'name']);
         $paid = app(EffectiveRatesQuery::class)->handle($employees->map(fn (User $user) => $user->employeeProfile)->filter()->values()->all(), $this->selectedRun->start_date);
         $none = $employees->filter(fn (User $user) => ($paid[$user->employeeProfile->id ?? 0]->rate ?? 0.0) <= 0);
 
