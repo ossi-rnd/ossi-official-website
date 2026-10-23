@@ -103,7 +103,9 @@ One class answers both "who heads this person" (`Heads::of`, `Heads::label`) and
 - watching and approving their time away (Office Away; `monitor-office-away` now also HR and Operation HQ, each seeing only the people they head);
 - Notices to Explain and merits.
 
-The Super Admin may act for any head, as backup. The President or VP still **see** every office staffer's requests and time away, and decide only HR staff's. A Satellite's leave waits at stage `hq`, where Operation HQ **decides** it (not endorses it, as for a guard). For Operation HQ, the "guards only" visibility rule includes the Satellites it heads.
+The Super Admin may act for any head, as backup. The President or VP still **see** every office staffer's requests and time away, and decide only HR staff's. A Satellite's leave waits at stage `hq`, where Operation HQ **decides** it (not endorses it, as for a guard). For Operation HQ, the "guards only" visibility rule includes the Satellites it heads. The Super Admin, President and VP have no head (no employee record).
+
+`tests/Feature/Access/ChainOfHeadsMatrixTest.php` asks every flow at once (leave, overtime, time away, Notices to Explain, merits) for each pair: the head can act for their own people; nobody can act upward, sideways, across the chain or for themselves.
 
 ## Regional scope (Satellite Operation)
 

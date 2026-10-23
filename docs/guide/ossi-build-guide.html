@@ -4446,9 +4446,9 @@ flowchart TD
   <div class="chapter-head"><span class="no">07</span><h2>Leave &amp; overtime</h2></div>
   <p class="lead">Employees file, supervisors decide: guards' leave climbs Operations to HR, and their overtime goes to HR, Admin or Operations (a Satellite only in its region). Office staff's leave and overtime go to <b>their head</b> (<code>App\Support\Heads</code>, the owner's chain): HR for Admin, Accounting and Operation HQ; Operation HQ for a Satellite; the President or VP for HR. The President or VP still see them all. Reviews lock the row so two supervisors can't both decide, nobody reviews their own request, and approved overtime can be less than requested, never more. Payroll later pays the smaller of logged and approved overtime, day by day.</p>
   <div class="why">
-    <div><b>One chain of heads</b><span><code>App\Support\Heads</code> answers both "who heads this person" (<code>of</code>, <code>label</code>) and "does X head Y" (<code>isHeadOf</code>). It covers a guard → Operation HQ + the region's Satellite; HR → the President or VP; a Satellite → Operation HQ; anyone else in the office → HR. Leave, overtime, time away, attendance alerts, Notices to Explain and merits all ask it, so the chain lives in one place. A Satellite's leave waits at stage <code>hq</code>, where Operation HQ <b>decides</b> it rather than endorsing it on to HR as for a guard.</span></div>
+    <div><b>One chain of heads</b><span><code>App\Support\Heads</code> answers both "who heads this person" (<code>of</code>, <code>label</code>) and "does X head Y" (<code>isHeadOf</code>). It covers a guard → Operation HQ + the region's Satellite; HR → the President or VP; a Satellite → Operation HQ; anyone else in the office → HR. Leave, overtime, time away, attendance alerts, Notices to Explain and merits all ask it, so the chain lives in one place. A Satellite's leave waits at stage <code>hq</code>, where Operation HQ <b>decides</b> it rather than endorsing it on to HR as for a guard. <code>ChainOfHeadsMatrixTest</code> asks all five flows at once for each pair: a head acts for their own people, never upward, sideways, across the chain or for themselves. It found one hole: the President has no employee record, so they fell into the default group and HR counted as their "head". Now nobody heads the Super Admin, President or VP.</span></div>
   </div>
-  <details class="file"><summary>app/Support/Heads.php<span class="lines">141 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Support/Heads.php<span class="lines">154 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Support;
 
@@ -4516,6 +4516,10 @@ flowchart TD
     {
         $person-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;employeeProfile.client&#039;</span>);
 
+        <span class="k">if</span> (self::<span class="f">isTopOfChain</span>($person)) {
+            <span class="k">return</span> <span class="k">new</span> Collection;
+        }
+
         $heads = <span class="k">match</span> (self::<span class="f">groupOf</span>($person)) {
             self::OPERATIONS =&gt; self::<span class="f">operationsFor</span>(($client ?? $person-&gt;employeeProfile?-&gt;client)?-&gt;region),
             self::LEADERSHIP =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Role::<span class="f">leadership</span>())-&gt;<span class="f">get</span>(),
@@ -4529,7 +4533,7 @@ flowchart TD
     <span class="c">/** Whether $head heads $person (and so may decide for them). The Super Admin may, as backup. */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">isHeadOf</span>(User $head, User $person): bool
     {
-        <span class="k">if</span> ($head-&gt;<span class="f">is</span>($person)) {
+        <span class="k">if</span> ($head-&gt;<span class="f">is</span>($person) || self::<span class="f">isTopOfChain</span>($person)) {
             <span class="k">return</span> <span class="k">false</span>;
         }
 
@@ -4575,6 +4579,15 @@ flowchart TD
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">headsOfficeStaff</span>(User $viewer): bool
     {
         <span class="k">return</span> self::<span class="f">seesAllOfficeStaff</span>($viewer) || $viewer-&gt;<span class="f">hasAnyRole</span>(Role::Hr, Role::OperationsHq);
+    }
+
+    <span class="c">/**
+     * The Super Admin, President and VP: no employee record, so nobody here heads them
+     * (without this they&#039;d fall into the default group, and HR would &quot;head&quot; the President).
+     */</span>
+    <span class="k">private</span> <span class="k">static</span> <span class="k">function</span> <span class="f">isTopOfChain</span>(User $person): bool
+    {
+        <span class="k">return</span> $person-&gt;employeeProfile === <span class="k">null</span> &amp;&amp; $person-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">withoutEmployeeRecord</span>());
     }
 
     <span class="c">/**

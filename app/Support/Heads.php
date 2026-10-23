@@ -66,6 +66,10 @@ final class Heads
     {
         $person->loadMissing('employeeProfile.client');
 
+        if (self::isTopOfChain($person)) {
+            return new Collection;
+        }
+
         $heads = match (self::groupOf($person)) {
             self::OPERATIONS => self::operationsFor(($client ?? $person->employeeProfile?->client)?->region),
             self::LEADERSHIP => User::query()->notifiable(Role::leadership())->get(),
@@ -79,7 +83,7 @@ final class Heads
     /** Whether $head heads $person (and so may decide for them). The Super Admin may, as backup. */
     public static function isHeadOf(User $head, User $person): bool
     {
-        if ($head->is($person)) {
+        if ($head->is($person) || self::isTopOfChain($person)) {
             return false;
         }
 
@@ -125,6 +129,15 @@ final class Heads
     public static function headsOfficeStaff(User $viewer): bool
     {
         return self::seesAllOfficeStaff($viewer) || $viewer->hasAnyRole(Role::Hr, Role::OperationsHq);
+    }
+
+    /**
+     * The Super Admin, President and VP: no employee record, so nobody here heads them
+     * (without this they'd fall into the default group, and HR would "head" the President).
+     */
+    private static function isTopOfChain(User $person): bool
+    {
+        return $person->employeeProfile === null && $person->hasAnyRole(...Role::withoutEmployeeRecord());
     }
 
     /**

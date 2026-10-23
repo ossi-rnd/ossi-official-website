@@ -2,6 +2,16 @@
 
 What changed, why, and where to read more. Newest first. Each entry was built the same way: understand the existing code → small change → Pest tests → PHPStan (level 8) and Pint → a check in a real browser (Playwright) on a **scratch copy** of the database → docs.
 
+## 2026-10-23
+
+**Tests for who is above whom (`ChainOfHeadsMatrixTest`)**
+- **What it checks:** each head can act for their own people in **every** flow at once: deciding leave and overtime, approving time away, issuing a Notice to Explain, giving a merit. Nobody can act **upward** (Accounting → HR, a Satellite → Operation HQ), **sideways** (HR → another HR, Admin → Accounting, one Satellite → another), **across the chain** (HR → a Satellite, Operation HQ → Accounting; the President or VP only monitor non-HR staff), or **for themselves**.
+- **Also covered:**
+  - A guard's leave still climbs Satellite → Operation HQ → HR, each only at their own step, and a Satellite only for their own region.
+  - The Action refuses an upward decision even without the screen.
+  - A resigned head stops being told.
+- **Fixed, found by the new tests:** the President, VP and Super Admin have no employee record, so `Heads` put them in the default group and counted HR as the President's "head". No screen could reach it, since they can't file requests or be picked for a notice. Now nobody heads them (`Heads::isTopOfChain`). 951 tests pass.
+
 ## 2026-10-22
 
 **One chain of heads for everything (`App\Support\Heads`)**
