@@ -40,12 +40,13 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 
 1. Pint (`vendor/bin/pint <paths>`; `--dirty` needs git), PHPStan (`vendor/bin/phpstan analyse --memory-limit=1G`), and the **full** suite (`php artisan test --parallel`) all pass. Run `php artisan view:cache` after Blade edits, and `npm run build` after JS or CSS changes.
 2. `docs/CHANGELOG.md` gets an entry under today's date, and the right `docs/features/*.md` is updated.
-3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 181 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
+3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 182 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
 4. Mention honestly anything that went wrong, and how it was fixed.
 
 ## Safety rules (learned the hard way)
 
-- **Back up before any migration or data edit:** `database/database-before-<what>-<stamp>.sqlite` for dev; `scripts\pilot\backup-pilot.ps1` for the pilot. Never `migrate:fresh` the dev database without telling the owner. Never edit the owner's `.env`.
+- **Back up before any migration or data edit:** `php scripts/pilot/backup.php database/database.sqlite database/database-before-<what>-<stamp>.sqlite` for dev; `scripts\pilot\backup-pilot.ps1` for the pilot. **Never a plain file copy:** SQLite runs in WAL mode (since 2026-10-23), so recent writes sit in `*.sqlite-wal` until merged, and `Copy-Item` of the `.sqlite` alone can miss them. `backup.php` (`VACUUM INTO`) takes a complete snapshot. The same goes for copying a database to the laptop.
+- **SQLite settings are in `config/database.php`** (busy_timeout 5 s, WAL, IMMEDIATE transactions): the web server and the queue worker write at the same time. Without them a background job failed with "database is locked" (load test, 2026-10-23). Restart the workers after changing them (`queue:restart`). Never `migrate:fresh` the dev database without telling the owner. Never edit the owner's `.env`.
 - **The pilot runs this folder live.** A saved file is live there at once. A change that needs a migration is migrated on dev **and** the pilot in the same step (after the backup), before or with the code. A rename shipped before its pilot migration once broke the Radios page for 4 minutes, and the Equipment menu (new tables) was saved minutes before its migration on 2026-10-23. With a new table, write the migration first and migrate dev and the pilot before saving code that reads it (the menu runs on every page).
 - **Never `preg_replace` PHP source.** Use exact `str_replace` with match counts, or the Edit tool, then `php -l`. A bad pattern once emptied files.
 - **Blade class sweeps** may touch only `class="..."` attributes or single-line quoted strings made purely of class names. Dry-run first. Then `view:cache` and the full suite. A loose sweep once broke 7 views.
@@ -69,7 +70,7 @@ The repo carries the code and docs. These do **not** travel through git, on purp
 | Not in git | How to bring it |
 |---|---|
 | `.env` (APP_KEY, Gmail app password) | Copy privately (USB / password manager), never commit. **Same APP_KEY** is required to read encrypted fields (government IDs, date of birth, medical notes) in a copied database. |
-| `database/database.sqlite` (practice data), `pilot.sqlite`, backups | Copy the file if you want the same data. Otherwise `php artisan migrate:fresh --seed` gives demo data (and a new APP_KEY is fine then). |
+| `database/database.sqlite` (practice data), `pilot.sqlite`, backups | Copy it with `php scripts/pilot/backup.php database/database.sqlite <copy>` (WAL mode: a plain copy can miss recent writes) if you want the same data. Otherwise `php artisan migrate:fresh --seed` gives demo data (and a new APP_KEY is fine then). |
 | `storage/app/private` (selfies, receipts, documents) | Copy if the copied database refers to them. |
 | `vendor/`, `node_modules/`, `public/build` | `composer install`, `npm install`, `npm run build`. |
 | Claude's machine-local memory (`~/.claude/projects/...`) | Not needed: this file replaces it. |

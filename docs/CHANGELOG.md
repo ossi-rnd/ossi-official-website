@@ -4,6 +4,17 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**SQLite: web and worker can write together ("database is locked" fixed)**
+- **What happened:** on the 5,000-guard test copy, "Generate all" stopped at 0 of 4,911, three times: `SQLSTATE[HY000]: General error: 5 database is locked`. The worker was writing payslips while the page saved its session on every 2-second poll. SQLite allows one writer, and by default a second writer gave up at once.
+- **The fix, in `config/database.php`, not `.env`:**
+  - `busy_timeout` 5000: a writer waits up to 5 s;
+  - `journal_mode` WAL: readers and the writer don't block each other;
+  - `synchronous` normal: safe with WAL;
+  - `transaction_mode` IMMEDIATE: a transaction takes the write lock as it starts, so two readers can't deadlock upgrading.
+- **It matters for the real pilot too:** SQLite with a worker. The pilot was backed up first and its worker restarted.
+- **Checked:** the same click on the copy, with the page polling throughout, finished all **4,839** remaining (5,000 payslips on the run) in **81 s**, faster than the earlier 146 s thanks to WAL. All 982 tests pass.
+- **New rule:** back up and copy databases with `scripts/pilot/backup.php` (`VACUUM INTO`), never a plain file copy, because WAL keeps recent writes in `*.sqlite-wal`.
+
 **Speed at 5,000 employees (load test on a copy of the pilot)**
 - **The test:** 5,000 sample guards with 13 days each (65,000 time logs) and a Processing run, on a separate copy (`database/loadtest.sqlite`, to delete after). The pilot was untouched.
 - **What was measured:** each page rendered with every query timed. The test server has PHP's code cache off (`opcache.enable_cli=0`), so whole-page times there are slower than a real server.
