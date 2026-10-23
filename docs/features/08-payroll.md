@@ -70,7 +70,14 @@ Late: exactly the minutes late after the grace period, `round(late minutes × mi
 
 ## Scale
 
-Run totals come from SQL `SUM()` over frozen records; live estimates are computed only for the 20 employees on the current page; CSV export streams in chunks. "Generate all" runs in the request with one transaction per employee: fine for a few hundred employees. Past that, move the loop into a queued job (`ShouldQueue`, one job per chunk) and show progress with `wire:poll`.
+Run totals come from SQL `SUM()` over frozen records; live estimates are computed only for the 20 employees on the current page; CSV export streams in chunks. **"Generate all" runs in the background** (since 2026-10-23, for 2,000+ employees), with one transaction per employee:
+- `StartPayslipGeneration` saves on the run who started it and how many are due (`generation_total`, status `queued`), then dispatches `GenerateRunPayslipsJob` (unique per run, one try).
+- The job builds payslips in batches of 100 (`GenerateRunPayslips`, with an `$afterBatch` callback) and saves progress after each batch: `generation_done`, `generation_generated`, `generation_skipped_no_rate`, status `running` then `done`.
+- The run page shows a progress bar polled every 2 seconds ("640 of 2,104 · 30%"), "Generate all" turns into "Generating…", and **Approve run** is blocked until it finishes.
+- Whoever started it gets a bell with the summary.
+- If it fails, the status is `failed`, the starter gets a bell, and the page says to click Generate all again. That carries on where it stopped, because anyone with a payslip is skipped.
+
+It needs the queue worker running: the pilot's `keep-running.ps1`, or Laravel Cloud's worker. On a laptop without a worker, run `php artisan queue:work`. Migration `2026_10_23_100006`; tests `tests/Feature/Payroll/BackgroundGenerationTest.php`.
 
 ## Deliberate change
 

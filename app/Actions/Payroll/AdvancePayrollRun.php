@@ -79,6 +79,11 @@ final class AdvancePayrollRun
      */
     public function approvalBlockedReason(PayrollRun $run): ?string
     {
+        // Not while "Generate all" is still building payslips in the background.
+        if ($run->isGenerating()) {
+            return 'Payslips are still being generated. Approve once that finishes.';
+        }
+
         if (! today()->isAfter($run->end_date)) {
             return 'Available from '.$run->end_date->copy()->addDay()->format('M j, Y').'. The period runs until '.$run->end_date->format('M j').', so attendance, leave and overtime can still change. Generate payslips now to check the numbers.';
         }

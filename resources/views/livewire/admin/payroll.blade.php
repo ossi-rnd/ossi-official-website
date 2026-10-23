@@ -114,15 +114,39 @@
                 @if ($status === \App\Enums\PayrollRunStatus::Draft)
                     <x-ui.button type="button" size="sm" wire:click="advanceRun" wire:confirm="Start processing? Employees will see their estimated payslips.">Start processing</x-ui.button>
                 @elseif ($status === \App\Enums\PayrollRunStatus::Processing)
-                    <x-ui.button type="button" variant="secondary" size="sm" wire:click="generateAll" wire:loading.attr="disabled" wire:target="generateAll" wire:confirm="Generate and freeze payslips for everyone who worked this period?">
-                        Generate all
-                    </x-ui.button>
+                    @if ($run->isGenerating())
+                        <x-ui.button type="button" variant="secondary" size="sm" disabled-reason="Payslips are being generated in the background.">Generating…</x-ui.button>
+                    @else
+                        <x-ui.button type="button" variant="secondary" size="sm" wire:click="generateAll" wire:loading.attr="disabled" wire:target="generateAll" wire:confirm="Generate and freeze payslips for everyone who worked this period? It runs in the background; you can leave the page.">
+                            Generate all
+                        </x-ui.button>
+                    @endif
                     <x-ui.button type="button" variant="primary" size="sm" wire:click="advanceRun" wire:confirm="Approve this run? Generated payslips become final." tooltip-align="end"
                         :disabled-reason="$this->approvalBlockedReason">Approve run</x-ui.button>
                 @elseif ($status === \App\Enums\PayrollRunStatus::Approved)
                     <x-ui.button type="button" variant="primary" size="sm" wire:click="advanceRun" wire:confirm="Mark every payslip in this run as paid?">Mark as paid</x-ui.button>
                 @endif
             </x-slot:actions>
+
+            {{-- "Generate all" in the background: progress, polled every 2 seconds while it runs. --}}
+            @if ($run->isGenerating())
+                <div wire:poll.2s="refreshGeneration" class="space-y-2 border-b border-gray-100 px-4 py-3 dark:border-gray-800" role="status" aria-live="polite">
+                    <div class="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                        <p class="font-medium text-gray-800 dark:text-gray-100">
+                            {{ $run->generation_status === 'queued' ? 'Waiting for the background worker…' : 'Generating payslips…' }}
+                        </p>
+                        <p class="text-gray-500 tabular-nums dark:text-gray-400">{{ number_format($run->generation_done) }} of {{ number_format($run->generation_total) }} · {{ $run->generationPercent() }}%</p>
+                    </div>
+                    <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800" aria-hidden="true">
+                        <div class="h-full rounded-full bg-blue-600 transition-all duration-500 dark:bg-blue-500" style="width: {{ max(2, $run->generationPercent()) }}%"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">You can leave this page: it keeps going, and you'll get a bell when it's done.</p>
+                </div>
+            @elseif ($run->generation_status === 'failed')
+                <div class="border-b border-gray-100 px-4 py-3 dark:border-gray-800">
+                    <x-ui.alert tone="amber" class="text-sm">Generating stopped partway ({{ number_format($run->generation_done) }} of {{ number_format($run->generation_total) }}). The payslips already made are kept; click <b>Generate all</b> again to carry on.</x-ui.alert>
+                </div>
+            @endif
 
             {{-- Two views of the same page of employees: their payslips, or their contributions and tax. --}}
             <div class="flex gap-1 border-b border-gray-200 px-4 dark:border-gray-800" role="tablist">

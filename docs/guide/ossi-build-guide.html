@@ -6056,6 +6056,86 @@ flowchart LR
         <span class="k">return</span> ValidationException::<span class="f">withMessages</span>([<span class="s">&#039;payslip&#039;</span> =&gt; $message]);
     }
 }</code></pre></details>
+  <h3>"Generate all" in the background</h3>
+  <p>At 2,000+ employees, building every payslip inside one click would hang the page and could time out. So <code>StartPayslipGeneration</code> saves the plan on the run (how many are due, who started it) and dispatches <code>GenerateRunPayslipsJob</code>. A queue worker builds the payslips in batches of 100, saving progress after each batch. The run page polls it (<code>wire:poll.2s</code>) for a progress bar, and <b>Approve run</b> waits until it's done. The job is <code>ShouldBeUnique</code> per run and has one try. If it stops, clicking again carries on, because anyone with a payslip is skipped. Whoever started it gets a bell.</p>
+  <details class="file"><summary>app/Jobs/GenerateRunPayslipsJob.php<span class="lines">78 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Jobs;
+
+<span class="k">use</span> App\Actions\Payroll\GenerateRunPayslips;
+<span class="k">use</span> App\Models\PayrollRun;
+<span class="k">use</span> App\Models\User;
+<span class="k">use</span> App\Notifications\UpdateNotice;
+<span class="k">use</span> Illuminate\Contracts\Queue\ShouldBeUnique;
+<span class="k">use</span> Illuminate\Contracts\Queue\ShouldQueue;
+<span class="k">use</span> Illuminate\Foundation\Queue\Queueable;
+<span class="k">use</span> Throwable;
+
+<span class="c">/**
+ * &quot;Generate all&quot; for one payroll run, in the background, in batches of 100. After each batch the
+ * run&#039;s progress is saved (the page polls it for its bar). One per run at a time (unique by run).
+ * Interrupted or failed, clicking &quot;Generate all&quot; again carries on: anyone with a payslip is skipped.
+ * Whoever started it gets a bell when it&#039;s done, or if it fails.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> GenerateRunPayslipsJob <span class="k">implements</span> ShouldBeUnique, ShouldQueue
+{
+    <span class="k">use</span> Queueable;
+
+    <span class="c">/** One try: a half-done run is resumed by starting it again, not retried blindly. */</span>
+    <span class="k">public</span> int $tries = <span class="n">1</span>;
+
+    <span class="c">/** Generous: thousands of payslips. */</span>
+    <span class="k">public</span> int $timeout = <span class="n">3600</span>;
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(<span class="k">public</span> <span class="k">readonly</span> int $runId, <span class="k">public</span> <span class="k">readonly</span> int $actorId) {}
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">uniqueId</span>(): string
+    {
+        <span class="k">return</span> (string) $this-&gt;runId;
+    }
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">handle</span>(GenerateRunPayslips $generate): void
+    {
+        $run = PayrollRun::<span class="f">query</span>()-&gt;<span class="f">findOrFail</span>($this-&gt;runId);
+        $actor = User::<span class="f">query</span>()-&gt;<span class="f">findOrFail</span>($this-&gt;actorId);
+
+        $run-&gt;<span class="f">forceFill</span>([<span class="s">&#039;generation_status&#039;</span> =&gt; <span class="s">&#039;running&#039;</span>])-&gt;<span class="f">save</span>();
+
+        $generated = $generate-&gt;<span class="f">handle</span>($run, $actor, $skippedNoRate, <span class="k">function</span> (int $processed, int $generatedSoFar, int $noRateSoFar) <span class="k">use</span> ($run) {
+            $run-&gt;<span class="f">forceFill</span>([
+                <span class="s">&#039;generation_done&#039;</span> =&gt; $processed,
+                <span class="s">&#039;generation_generated&#039;</span> =&gt; $generatedSoFar,
+                <span class="s">&#039;generation_skipped_no_rate&#039;</span> =&gt; $noRateSoFar,
+                <span class="c">// The estimate can be low if more became due meanwhile: never show more than 100%.</span>
+                <span class="s">&#039;generation_total&#039;</span> =&gt; <span class="f">max</span>($run-&gt;generation_total, $processed),
+            ])-&gt;<span class="f">save</span>();
+        });
+
+        $run-&gt;<span class="f">forceFill</span>([
+            <span class="s">&#039;generation_status&#039;</span> =&gt; <span class="s">&#039;done&#039;</span>,
+            <span class="s">&#039;generation_done&#039;</span> =&gt; <span class="f">max</span>($run-&gt;generation_done, $run-&gt;generation_total),
+            <span class="s">&#039;generation_generated&#039;</span> =&gt; $generated,
+            <span class="s">&#039;generation_skipped_no_rate&#039;</span> =&gt; $skippedNoRate,
+            <span class="s">&#039;generation_finished_at&#039;</span> =&gt; <span class="f">now</span>(),
+        ])-&gt;<span class="f">save</span>();
+
+        $actor-&gt;<span class="f">notify</span>(<span class="k">new</span> <span class="f">UpdateNotice</span>(
+            <span class="s">&quot;Payslips generated: {$run-&gt;periodLabel()}&quot;</span>,
+            <span class="s">&quot;{$generated} generated.&quot;</span>.($skippedNoRate &gt; <span class="n">0</span> ? <span class="s">&quot; {$skippedNoRate} skipped: no daily rate (set it on Daily Rates, then Generate all again).&quot;</span> : <span class="s">&#039;&#039;</span>),
+            <span class="f">route</span>(<span class="s">&#039;payroll&#039;</span>, [<span class="s">&#039;run&#039;</span> =&gt; $run-&gt;id]), <span class="s">&#039;banknotes&#039;</span>));
+    }
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">failed</span>(?Throwable $exception): void
+    {
+        $run = PayrollRun::<span class="f">query</span>()-&gt;<span class="f">find</span>($this-&gt;runId);
+        $run?-&gt;<span class="f">forceFill</span>([<span class="s">&#039;generation_status&#039;</span> =&gt; <span class="s">&#039;failed&#039;</span>, <span class="s">&#039;generation_finished_at&#039;</span> =&gt; <span class="f">now</span>()])-&gt;<span class="f">save</span>();
+
+        User::<span class="f">query</span>()-&gt;<span class="f">find</span>($this-&gt;actorId)?-&gt;<span class="f">notify</span>(<span class="k">new</span> <span class="f">UpdateNotice</span>(
+            <span class="s">&#039;Payslip generation stopped&#039;</span>.($run ? <span class="s">&quot;: {$run-&gt;periodLabel()}&quot;</span> : <span class="s">&#039;&#039;</span>),
+            <span class="s">&#039;It stopped partway. The payslips already made are kept; click Generate all again to carry on.&#039;</span>,
+            <span class="f">route</span>(<span class="s">&#039;payroll&#039;</span>, $run ? [<span class="s">&#039;run&#039;</span> =&gt; $run-&gt;id] : []), <span class="s">&#039;banknotes&#039;</span>));
+    }
+}</code></pre></details>
   <details class="file"><summary>config/payroll.php<span class="lines">174 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="c">/**
@@ -21332,6 +21412,7 @@ flowchart LR
     ['A guard\'s birthday is today. Who gets a bell?', ['Everyone in the company', 'HR, Operation HQ and the Satellite of the guard\'s region, unless the guard keeps it private', 'Only the guard', 'Only HR'], 1, 'SendBirthdayReminders: HR for everyone, Operations for guards (a Satellite its region). Never the age; nobody if birthday_private.'],
     ['A petty cash fund of ₱5,000 has ₱1,500 of expenses in a request still waiting for Accounting. What is the cash on hand?', ['₱5,000', '₱3,500', '₱1,500', '₱6,500'], 1, 'cashOnHand() = fund − expenses not yet replenished, which includes those in a pending request. Only a released request brings the cash back.'],
     ['A referred hire leaves 60 days in; the terms say 90. What happens on the referrer\'s next payslip after the due date?', ['The bonus is paid anyway', 'No bonus: the referral is closed and the referrer told', 'Half the bonus', 'HR decides by hand'], 1, 'PayDueReferralBonuses checks Referral::hireStayed(): still working, or a last day on or after the due date. Otherwise Forfeited.'],
+    ['Accounting clicks Generate all for 2,100 employees, then the office internet drops at 640. What happens?', ['All 640 payslips are rolled back', 'The job keeps going on the server; the page shows the bar again on return, and a bell comes when it\'s done', 'Nothing was saved until the click finished', 'The run is approved automatically'], 1, 'The work runs in a queued job (GenerateRunPayslipsJob), not in the browser\'s request. Progress lives on the run. Even if the job itself stops, clicking again carries on: anyone with a payslip is skipped.'],
     ['Operations hands a guard two uniform polos. Who decides how much each payslip takes?', ['Operations, when issuing', 'Accounting, final (SetUniformCharge); then the guard authorizes it', 'HR', 'Nobody: the whole price is taken from the next payslip'], 1, 'The issuer has no money fields. Accounting is told, sets the amount per payslip (up to the total), and the guard must still authorize it before anything is deducted (Art. 113).'],
     ['A guard adds boots (size 42) and a flashlight to the cart, goes to My Payslips, then comes back. What happens to the cart?', ['It\'s empty: Livewire state lives only on the page', 'It\'s still there: the cart property is #[Session], kept for the session', 'It was sent automatically', 'Only the boots are kept'], 1, 'Livewire\'s #[Session] attribute stores the property in the session, so the cart survives navigation. Sending it turns each line into a request, with one bell for the issuers.'],
     ['A guard\'s company flashlight is reported damaged on Monday. When can Operations charge them?', ['Right away, since it was issued to them', 'Once the guard explains or 5 days pass, and only the actual loss, at most 20% of a week\'s wages per payslip', 'Only if the guard signs a new authority to deduct', 'Never: company property is never charged'], 1, 'DOLE\'s conditions for deducting a loss: shown responsible, heard, never more than the loss, at most 20% of a week\'s wages. DecideEquipmentIncident enforces each one.'],

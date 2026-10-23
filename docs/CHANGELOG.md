@@ -4,6 +4,23 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Payroll: "Generate all" in the background, with a progress bar**
+- **Why:** the owner asked about 2,000+ employees. "Generate all" built every payslip inside one click: fine for a few hundred, but at thousands the page would hang and could time out partway.
+- **Now:**
+  - The click starts a background job (`StartPayslipGeneration` → `GenerateRunPayslipsJob`), which builds payslips in batches of 100.
+  - The run page shows a live progress bar ("640 of 2,104 · 30%"), and it's safe to leave the page.
+  - Only one generation per run at a time, and **Approve run** waits until it's done.
+  - Whoever started it gets a bell: "2,091 generated. 13 skipped: no daily rate".
+  - If it stops, clicking again carries on where it left off.
+- **Not needed:** time windows. One background worker doesn't slow clock-ins or other pages.
+- **Already fine:** release bells and emails were already sent in the background.
+- **Still to do:** Gmail's ~500 emails a day will need a transactional mail service at that size (on Laravel Cloud).
+- **Database, safe order:** migration `2026_10_23_100006` (progress columns on `payroll_runs`) was added and run on dev and the pilot after backups, before the code used it.
+- **Checks:**
+  - 4 new tests (982 in all);
+  - an end-to-end run with a real database queue worker on a throwaway copy (24 of 24, done, bell sent);
+  - the pilot's worker restarted to load the new job.
+
 **Accounting sees the Attendance Log**
 - **Why:** payroll is computed from attendance (days, minutes late, overtime), so Accounting can now open the **Attendance Log**, with the same detail as HR (the owner's choice): selfies, addresses, map links. Their dashboard also shows today's attendance.
 - **Unchanged:** editing the attendance alert rules stays with HR.

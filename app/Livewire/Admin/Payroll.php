@@ -6,9 +6,9 @@ use App\Actions\Payroll\AdvancePayrollRun;
 use App\Actions\Payroll\CreatePayrollRun;
 use App\Actions\Payroll\DeleteEmployeeDeduction;
 use App\Actions\Payroll\GeneratePayslip;
-use App\Actions\Payroll\GenerateRunPayslips;
 use App\Actions\Payroll\RecordPayslipView;
 use App\Actions\Payroll\SaveEmployeeDeduction;
+use App\Actions\Payroll\StartPayslipGeneration;
 use App\Actions\Payroll\ToggleEmployeeDeduction;
 use App\Data\LateDay;
 use App\Data\PayslipBreakdown;
@@ -191,22 +191,39 @@ class Payroll extends Component
         $this->dispatch('notify', message: "Payslip generated for {$employee->name}.");
     }
 
-    public function generateAll(GenerateRunPayslips $generateAll): void
+    /**
+     * "Generate all": in the background (StartPayslipGeneration → GenerateRunPayslipsJob), so
+     * thousands of payslips don't hang this page. The page shows a progress bar while it runs.
+     */
+    public function generateAll(StartPayslipGeneration $start): void
     {
         $this->authorize(Ability::ManagePayroll->value);
 
-        $count = $generateAll->handle($this->selectedRunOrFail(), $this->currentUser(), $noRate);
+        $run = $start->handle($this->selectedRunOrFail(), $this->currentUser());
 
         $this->clearComputed();
+        $this->dispatch('notify', message: $run->generation_status === 'done'
+            ? $this->generationSummary($run)
+            : 'Generating payslips in the background. You can leave this page; you\'ll get a bell when it\'s done.');
+    }
+
+    /** The progress bar polls this while a generation runs. */
+    public function refreshGeneration(): void
+    {
+        $this->clearComputed();
+    }
+
+    public function generationSummary(PayrollRun $run): string
+    {
         $waiting = $this->pendingAdjustments;
         $message = match (true) {
-            $count > 0 => "Generated {$count} payslip(s).",
-            $noRate > 0 => 'No payslips generated.',
+            $run->generation_generated > 0 => "Generated {$run->generation_generated} payslip(s).",
+            $run->generation_skipped_no_rate > 0 => 'No payslips generated.',
             default => 'Every employee who worked this period already has a payslip.',
         };
         $message .= $waiting > 0 ? " {$waiting} skipped: adjustment awaiting approval." : '';
-        $message .= $noRate > 0 ? " {$noRate} without a daily rate skipped: set it on Daily Rates." : '';
-        $this->dispatch('notify', message: $message);
+
+        return $message.($run->generation_skipped_no_rate > 0 ? " {$run->generation_skipped_no_rate} without a daily rate skipped: set it on Daily Rates." : '');
     }
 
     /**
