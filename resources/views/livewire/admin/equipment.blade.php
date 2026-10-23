@@ -264,53 +264,119 @@
     @if ($issuing)
         @php $picked = $this->pickedItem(); @endphp
         <x-ui.modal :title="$fromRequestId ? 'Issue what they asked for' : 'Issue equipment'" close="cancelIssue" max-width="lg">
-            <form id="issue-form" wire:submit="issue" class="space-y-4">
-                <x-ui.select label="To" wire:model.live="issueToId" searchable :disabled="$fromRequestId !== null">
-                    <option value="">Choose a person</option>
-                    @foreach ($this->people as $person)
-                        <option value="{{ $person->id }}">{{ $person->name }}</option>
-                    @endforeach
-                </x-ui.select>
+            {{-- A minimum height: the dialog scrolls, so an open list in a short form would be cut off. --}}
+            <form id="issue-form" wire:submit="issue" class="min-h-96 space-y-5">
+                {{-- 1. Who: searchable by name, post or office role. From a request, it's fixed. --}}
+                @if ($fromRequestId)
+                    @php $recipient = $this->people->firstWhere('id', (int) $issueToId); @endphp
+                    <div>
+                        <p class="ui-label">To</p>
+                        <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-100">{{ $recipient?->name }}</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">{{ $recipient ? $this->personNote($recipient) : '' }} · from their request</p>
+                    </div>
+                @else
+                    <x-ui.select label="To" wire:model.live="issueToId" searchable>
+                        <option value="">Search a name, post or role…</option>
+                        @foreach ($this->people as $person)
+                            <option value="{{ $person->id }}">{{ $person->name }} · {{ $this->personNote($person) }}</option>
+                        @endforeach
+                    </x-ui.select>
+                @endif
 
+                {{-- 2. What: an item from the list, or a radio from the masterlist. --}}
                 @unless ($fromRequestId)
-                    <div class="flex gap-4 text-sm" role="radiogroup" aria-label="What">
-                        <label class="flex items-center gap-2"><input type="radio" wire:model.live="issueKind" value="item" class="text-blue-600 dark:text-blue-400"> From the item list</label>
-                        <label class="flex items-center gap-2"><input type="radio" wire:model.live="issueKind" value="radio" class="text-blue-600 dark:text-blue-400"> A radio</label>
+                    <div class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-800/60" role="radiogroup" aria-label="What to issue">
+                        @foreach (['item' => ['package', 'An item'], 'radio' => ['radio', 'A radio']] as $value => [$icon, $text])
+                            <button type="button" role="radio" aria-checked="{{ $issueKind === $value ? 'true' : 'false' }}" wire:click="$set('issueKind', '{{ $value }}')"
+                                @class(['inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                                    'bg-white text-gray-800 shadow-sm dark:bg-gray-900 dark:text-gray-100' => $issueKind === $value,
+                                    'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200' => $issueKind !== $value])>
+                                <x-icon :name="$icon" class="h-4 w-4" /> {{ $text }}
+                            </button>
+                        @endforeach
                     </div>
                 @endunless
 
                 @if ($issueKind === 'radio')
-                    <x-ui.select label="Radio (in stock)" wire:model="issueRadioId" searchable>
-                        <option value="">Choose a radio</option>
+                    <x-ui.select label="Radio in stock" wire:model="issueRadioId" searchable>
+                        <option value="">Search a serial, brand or model…</option>
                         @foreach ($this->spareRadios as $radio)
-                            <option value="{{ $radio->id }}">{{ $radio->brand }} {{ $radio->model }} · SN {{ $radio->serial_number }}</option>
+                            <option value="{{ $radio->id }}">SN {{ $radio->serial_number }} · {{ $radio->brand }} {{ $radio->model }}</option>
                         @endforeach
                     </x-ui.select>
+                    @if ($this->spareRadios->isEmpty())
+                        <p class="text-xs text-amber-700 dark:text-amber-400">No radio in stock. Mark one Spare on Radios first.</p>
+                    @endif
                     <p class="text-xs text-gray-500 dark:text-gray-400">Company property: they confirm they received it and are accountable for it. The masterlist shows it with them.</p>
                 @else
-                    <x-ui.select label="Item" wire:model.live="issueItemId">
-                        <option value="">Choose an item</option>
+                    <x-ui.select label="Item" wire:model.live="issueItemId" searchable>
+                        <option value="">Search an item…</option>
                         @foreach ($this->issuableItems() as $item)
                             <option value="{{ $item->id }}">{{ $item->name }} · {{ $item->kind->shortLabel() }}{{ $item->kind === \App\Enums\EquipmentKind::Uniform ? ' · '.$item->priceLabel() : '' }}</option>
                         @endforeach
                     </x-ui.select>
-                    <div class="grid grid-cols-2 gap-4">
-                        @if ($picked?->hasSizes())
-                            <x-ui.select label="Size" wire:model.live="issueSize">
-                                <option value="">Choose</option>
-                                @foreach ($picked->sizeList() as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach
-                            </x-ui.select>
-                        @endif
-                        <x-ui.input label="Quantity" type="number" min="1" max="{{ \App\Actions\Equipment\IssueEquipment::MAX_QUANTITY }}" wire:model.live.debounce.300ms="issueQuantity" />
-                    </div>
-                    @if ($picked?->kind === \App\Enums\EquipmentKind::Uniform)
-                        @php $unit = $picked->priceFor($picked->hasSizes() ? ($issueSize ?: null) : null); @endphp
-                        <x-ui.alert tone="blue" class="text-xs">
-                            Charged to them{{ $unit && ! ($picked->hasSizes() && $issueSize === '') ? ': '.$money($unit * max(1, (int) $issueQuantity)) : '' }}.
-                            {{ $unit === null ? 'Accounting hasn\'t set a price for this yet.' : 'Accounting sets how much each payslip takes, and they authorize it on My Payslips before anything is deducted.' }}
-                        </x-ui.alert>
-                    @elseif ($picked)
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Company property: they confirm they received it and are accountable for it. Nothing is deducted.</p>
+                    @if (filled($issueToId) && $this->issuableItems()->isEmpty())
+                        <p class="text-xs text-amber-700 dark:text-amber-400">No item on the list is for this person yet.</p>
+                    @endif
+
+                    @if ($picked)
+                        @php
+                            $uniform = $picked->kind === \App\Enums\EquipmentKind::Uniform;
+                            // No price until a size is chosen: a size can cost more than the item's price.
+                            $unit = $picked->hasSizes() && $issueSize === '' ? null : $picked->priceFor($picked->hasSizes() ? $issueSize : null);
+                            $qty = max(1, (int) $issueQuantity);
+                        @endphp
+                        {{-- The chosen item: what it is, its size and how many. --}}
+                        <div class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                            <div class="flex items-center gap-3">
+                                <div class="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50 dark:bg-gray-800">
+                                    @if ($picked->photoUrl())
+                                        <img src="{{ $picked->photoUrl() }}" alt="" class="h-full w-full object-cover">
+                                    @else
+                                        <x-icon name="package" class="h-6 w-6 text-gray-300 dark:text-gray-600" />
+                                    @endif
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-medium text-gray-800 dark:text-gray-100">{{ $picked->name }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ $uniform ? 'Uniform · charged to them' : 'Company property · no charge' }}</p>
+                                </div>
+                            </div>
+
+                            @if ($picked->hasSizes())
+                                <div role="radiogroup" aria-label="Size">
+                                    <p class="mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">Size</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach ($picked->sizeList() as $size)
+                                            <button type="button" role="radio" aria-checked="{{ $issueSize === $size ? 'true' : 'false' }}" wire:click="$set('issueSize', @js($size))"
+                                                @class(['min-w-9 rounded-md border px-2 py-1 text-xs font-medium tabular-nums transition-colors',
+                                                    'border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20' => $issueSize === $size,
+                                                    'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800' => $issueSize !== $size])>{{ $size }}</button>
+                                        @endforeach
+                                    </div>
+                                    @error('issueSize')<p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                                </div>
+                            @endif
+
+                            <div class="flex items-center justify-between gap-3">
+                                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">Quantity</p>
+                                <div class="inline-flex items-center rounded-md border border-gray-300 dark:border-gray-700" role="group" aria-label="Quantity">
+                                    <button type="button" wire:click="stepIssueQuantity(-1)" @disabled($qty <= 1) class="flex h-9 w-9 items-center justify-center rounded-l-md text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-white/10" aria-label="One less">−</button>
+                                    <span class="w-8 text-center text-sm font-medium tabular-nums text-gray-800 dark:text-gray-100" aria-live="polite">{{ $qty }}</span>
+                                    <button type="button" wire:click="stepIssueQuantity(1)" @disabled($qty >= \App\Actions\Equipment\IssueEquipment::MAX_QUANTITY) class="flex h-9 w-9 items-center justify-center rounded-r-md text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-white/10" aria-label="One more">+</button>
+                                </div>
+                            </div>
+
+                            @if ($uniform)
+                                <div class="flex items-baseline justify-between gap-3 border-t border-gray-100 pt-3 dark:border-gray-800">
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                                        {{ $unit === null ? ($picked->hasSizes() && $issueSize === '' ? 'Choose the size to see the price.' : 'Accounting hasn\'t set a price for this yet.') : 'Accounting sets how much each payslip takes; they authorize it before anything is deducted.' }}
+                                    </p>
+                                    @if ($unit !== null)
+                                        <p class="shrink-0 text-sm font-semibold text-gray-800 tabular-nums dark:text-gray-100">{{ $money($unit * $qty) }}</p>
+                                    @endif
+                                </div>
+                            @endif
+                        </div>
                     @endif
                 @endif
             </form>

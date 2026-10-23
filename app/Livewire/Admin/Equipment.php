@@ -236,6 +236,31 @@ class Equipment extends Component
         $this->resetErrorBag();
     }
 
+    /** The − / + stepper in the issue form. */
+    public function stepIssueQuantity(int $by): void
+    {
+        $this->issueQuantity = (string) min(IssueEquipment::MAX_QUANTITY, max(1, (int) $this->issueQuantity + $by));
+    }
+
+    /** A new item clears the size picked for the last one. */
+    public function updatedIssueItemId(): void
+    {
+        $this->issueSize = '';
+        $this->resetErrorBag(['issueItem', 'issueSize']);
+    }
+
+    /** "Guard, Makati CBD" or "Office staff, Accounting": so the right person is found by post or role too. */
+    public function personNote(User $person): string
+    {
+        $profile = $person->employeeProfile;
+
+        return match (true) {
+            $profile === null => 'No employee record',
+            $profile->is_office_staff => 'Office staff'.($profile->position ? ', '.$profile->position->label() : ''),
+            default => 'Guard'.($profile->client ? ', '.$profile->client->name : ', not deployed'),
+        };
+    }
+
     /** The item picked in the issue form, for its sizes and price. */
     public function pickedItem(): ?EquipmentItem
     {
@@ -581,7 +606,7 @@ class Equipment extends Component
     public function people(): Collection
     {
         return User::query()->onPayroll()->where(fn (Builder $users) => EquipmentIssue::constrainPeopleHandledBy($users, $this->currentUser()))
-            ->whereKeyNot($this->currentUser()->id)->orderBy('name')->get(['id', 'name']);
+            ->whereKeyNot($this->currentUser()->id)->with('employeeProfile.client')->orderBy('name')->get(['id', 'name']);
     }
 
     /**

@@ -102,7 +102,6 @@
                     <p wire:loading wire:target="receipt" class="mt-1 text-xs text-gray-500">Uploading…</p>
                     @error('receipt') <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                 </div>
-                <p class="text-xs text-gray-500">Within {{ \App\Models\Reimbursement::fileWithinDays() }} days of the trip. Up to ₱{{ number_format(\App\Models\Reimbursement::maxAmount(deployment: true)) }} per claim. The guard is told.</p>
                 @include('livewire.partials.acknowledgement', ['lines' => \App\Models\Reimbursement::acknowledgementLines($ackLocale, forGuard: true), 'model' => 'acknowledges', 'id' => 'deployment-acknowledge', 'labelKey' => 'certify'])
             </form>
             <x-slot:footer>

@@ -4,6 +4,21 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Deployment Costs: one hint fewer**
+- **Removed:** the line "Within 60 days of the trip. Up to ₱20,000 per claim. The guard is told." under the receipt on File a claim, at the owner's request.
+- **Unchanged:** both limits are still checked when the claim is sent, with an error that names them, and the guard is still told.
+
+**Issue equipment: a clearer form, with search**
+- **To:** a searchable list. Each person reads "Name · Guard, Makati CBD" or "Name · Office staff, Accounting", so typing a post or a role finds them too (`personNote`). Issuing from a request shows the person, fixed.
+- **What:** an **An item / A radio** switch with icons, replacing the two radio buttons.
+- **Item:** searchable now (radios already were). Once picked, a preview shows its photo, its kind, size chips, a **− 1 +** stepper and the total.
+  - A new item clears the size picked for the last one.
+  - The price shows only once a size is picked, since a size can cost more. A test caught the form showing the base price first.
+  - Hints appear when no radio is in stock, or no item is meant for that person.
+- **Dialog height:** the form has a minimum height, so an open list isn't cut off inside the dialog.
+- **Checked in a real browser** at 1280 and 390 px. The throwaway database and photos were deleted afterwards.
+- **Tests:** a new test drives the form (27 equipment and dark-mode tests pass).
+
 **Uniforms: Operations hands over, Accounting sets the charge (final)**
 - **The owner's question:** only Accounting should decide deductions, so why does the issuer type "Deduct per payslip"?
 - **Chosen:** Operations (or Admin for office staff) approves and hands the uniform over, with no money fields. Accounting then sets how much each payslip takes, and that is final (`SetUniformCharge`, ability `manage-payroll`). The guard then authorizes the deduction on My Payslips, and nothing is taken before that.

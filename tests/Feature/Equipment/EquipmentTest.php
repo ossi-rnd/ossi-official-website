@@ -203,6 +203,22 @@ it('lets Admin tick standard sizes and add custom ones, ranges included', functi
     expect(EquipmentItem::query()->where('name', 'Duty trousers')->sole()->sizeList())->toBe(['L', '28', '30', '31', '32', 'W34/L32']);
 });
 
+it('issues from the form: people found by post or role, size chips and a quantity stepper', function () {
+    Livewire::actingAs($this->opsHq)->test(Equipment::class)
+        ->call('startIssue')
+        ->assertSee('Gary Guard · Guard, Makati CBD')->assertDontSee('Carla Clerk') // office staff aren't Operations'
+        ->set('issueToId', (string) $this->guard->id)
+        ->set('issueItemId', (string) $this->polo->id)->assertSee('Uniform · charged to them')->assertSee('Choose the size to see the price.')
+        ->set('issueSize', 'L')->assertSee('₱450.00')
+        ->call('stepIssueQuantity', 1)->assertSet('issueQuantity', '2')->assertSee('₱900.00')
+        ->call('stepIssueQuantity', -5)->assertSet('issueQuantity', '1')
+        ->set('issueItemId', (string) $this->flashlight->id)->assertSet('issueSize', '') // a new item clears the size
+        ->set('issueItemId', (string) $this->polo->id)->set('issueSize', 'XL')
+        ->call('issue')->assertHasNoErrors();
+
+    expect(EquipmentIssue::query()->sole()->describe())->toBe('Uniform polo (XL)');
+});
+
 it('lets Accounting set a uniform\'s charge from the page; Operations sees it waiting', function () {
     $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $this->polo, null, 'M', 1);
 

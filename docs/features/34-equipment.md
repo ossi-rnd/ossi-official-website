@@ -51,7 +51,7 @@ Radios come from the NTC masterlist (`Radios`): issuing one sets it *In use* wit
 
 ## Requests
 
-The issuer **issues** each requested item (the same record) or **does not approve** it, with a reason sent to the employee. The issue form offers only items meant for the person chosen.
+The issuer **issues** each requested item (the same record) or **does not approve** it, with a reason sent to the employee. The issue form offers only items meant for the person chosen. Its lists are searchable: people by name, post or office role ("Name · Guard, Makati CBD"), items by name, radios by serial. A picked item shows a preview with size chips, a quantity stepper and the total.
 
 ## Damage or loss: due process before any charge
 
