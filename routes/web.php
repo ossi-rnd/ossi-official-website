@@ -35,6 +35,7 @@ use App\Livewire\Admin\DeploymentClaims;
 use App\Livewire\Admin\DutyRoster;
 use App\Livewire\Admin\EmployeeDetail;
 use App\Livewire\Admin\Employees;
+use App\Livewire\Admin\Equipment;
 use App\Livewire\Admin\FinalPays;
 use App\Livewire\Admin\Holidays;
 use App\Livewire\Admin\LateDeductionSettings;
@@ -63,6 +64,7 @@ use App\Livewire\Attendance\ClockPanel;
 use App\Livewire\Attendance\ReportAbsence;
 use App\Livewire\CompanyPolicies;
 use App\Livewire\Complaints\MyComplaints;
+use App\Livewire\Equipment\MyEquipment;
 use App\Livewire\Finance\PettyCash;
 use App\Livewire\Help;
 use App\Livewire\Leave\MyLeave;
@@ -125,6 +127,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/reimbursements', MyReimbursements::class)->name('reimbursements');
         // Refer someone for hiring (hiring perks); the bonus comes on the payslip.
         Route::get('/referrals', MyReferrals::class)->name('referrals');
+        // Uniforms, radios and gear issued to me; requests; damage or loss reports to explain.
+        Route::get('/my-equipment', MyEquipment::class)->name('my-equipment');
     });
     Route::get('/company-policy/{policy}/file', ShowPolicyFileController::class)->name('company-policy.file');
 
@@ -206,6 +210,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // The NTC radio masterlist: Admin and Operation HQ.
     Route::get('/radios', Radios::class)->middleware(Ability::ManageRadios->middleware())->name('radios');
+
+    // Equipment: issuers (Operations for guards, Admin for office staff), and heads deciding
+    // damage or loss reports (the page checks Equipment::canOpen).
+    Route::get('/equipment', Equipment::class)->name('equipment');
 
     // Petty cash: Accounting and leadership see every fund; a custodian their own (the page checks PettyCashFund::canOpenPage).
     Route::get('/petty-cash', PettyCash::class)->name('petty-cash');

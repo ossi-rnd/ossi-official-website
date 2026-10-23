@@ -4,16 +4,20 @@ namespace App\Support;
 
 use App\Enums\Ability;
 use App\Enums\ComplaintStatus;
+use App\Enums\EquipmentStatus;
 use App\Enums\LoadRequestStatus;
 use App\Enums\PayrollRunStatus;
 use App\Enums\ReferralStatus;
 use App\Enums\ReplenishmentStatus;
 use App\Enums\ResignationStatus;
+use App\Livewire\Admin\Equipment as EquipmentDesk;
+use App\Livewire\Equipment\MyEquipment;
 use App\Models\AbsenceNotice;
 use App\Models\AwayLog;
 use App\Models\CompanyDocument;
 use App\Models\Complaint;
 use App\Models\EmployeeProfile;
+use App\Models\EquipmentIssue;
 use App\Models\FinalPay;
 use App\Models\LeaveRequest;
 use App\Models\LoadRequest;
@@ -92,6 +96,11 @@ final class Navigation
                 $can(Ability::ManageTraining) ? self::item('Training', 'trainings', 'academic-cap', badge: TrainingRequest::query()->pending()->count()) : null,
                 // Badge: radios whose NTC permit expires within 30 days, or has.
                 $can(Ability::ManageRadios) ? self::item('Radios', 'radios', 'radio', badge: Radio::query()->permitDueBy(CarbonImmutable::today()->addDays(Radio::DUE_SOON_DAYS))->count()) : null,
+                // Issuers (Operations, Admin): badge = requests waiting + reports to decide. A head who
+                // doesn't issue (HR, the President or VP) sees it only while a report waits for them.
+                ($equipmentBadge = EquipmentDesk::canOpen($user) ? EquipmentIssue::query()->handledBy($user)->where('status', EquipmentStatus::Requested)->count() + EquipmentDesk::incidentsToDecide($user) : 0) > 0 || $can(Ability::IssueEquipment)
+                    ? self::item('Equipment', 'equipment', 'package', badge: $equipmentBadge)
+                    : null,
                 // Badge: referrals waiting for HR to say hired or not.
                 $can(Ability::ManageReferrals) ? self::item('Referrals', 'referral-cases', 'user-plus', badge: Referral::query()->where('status', ReferralStatus::Submitted)->count()) : null,
                 $can(Ability::GiveMerits) ? self::item('Merits & Demerits', 'merits', 'scale') : null,
@@ -124,6 +133,8 @@ final class Navigation
                 // A fund's custodian who doesn't already have Management → Petty Cash.
                 ! $can(Ability::ViewPettyCash) && PettyCashFund::custodianOf($user) !== null ? self::item('Petty Cash', 'petty-cash', 'wallet') : null,
                 $onPayroll && Referral::canRefer($user) ? self::item('Refer a Friend', 'referrals', 'user-plus') : null,
+                // Badge: items to confirm receiving, and damage or loss reports to explain.
+                $onPayroll ? self::item('My Equipment', 'my-equipment', 'package', badge: MyEquipment::waitingFor($user)) : null,
                 $onPayroll ? self::item('My Complaints', 'complaints', 'flag') : null,
                 // Only while one is in progress; filing starts from My Profile (not a daily menu item).
                 $onPayroll && $user->resignations()->open()->exists() ? self::item('My Resignation', 'resignation', 'logout') : null,

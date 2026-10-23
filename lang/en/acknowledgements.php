@@ -10,6 +10,7 @@ return [
         'read' => 'I\'ve read these, and I understand them',
         'certify' => 'I certify these are true',
         'authorize' => 'I authorize this',
+        'received' => 'I received it',
         'language' => 'Read in',
     ],
 
@@ -42,5 +43,11 @@ return [
     'deduction' => [
         'with_total' => 'I authorize the company to deduct :each from each payslip for my :what until :total is paid (Labor Code Art. 113).',
         'recurring' => 'I authorize the company to deduct :each from each payslip for :what (Labor Code Art. 113).',
+    ],
+
+    // Receiving equipment (:what is "Motorola XiR P3688 radio (SN 123ABC)", :total "₱1,200.00").
+    'equipment' => [
+        'company' => 'I received :what in good condition. It stays company property: I will take care of it, use it only for work, and return it when asked or when I leave. If it is lost or damaged through my fault, the company may charge me for it, but only after I have been heard, and never more than the actual loss.',
+        'charged' => 'I received :what, worth :total. I pay for it as I authorized on My Payslips.',
     ],
 ];

@@ -62,6 +62,8 @@ enum Ability: string
     case ManagePettyCash = 'manage-petty-cash';
     case ManageRadios = 'manage-radios';
     case ManageReferrals = 'manage-referrals';
+    case IssueEquipment = 'issue-equipment';
+    case ManageEquipmentItems = 'manage-equipment-items';
 
     /**
      * @return list<Role>
@@ -172,6 +174,12 @@ enum Ability: string
             self::ManageRadios => [Role::Admin, Role::OperationsHq, Role::SuperAdmin],
             // Referrals: HR links them to the hire (or says not hired), and sets the bonus and days.
             self::ManageReferrals => [Role::Hr, Role::SuperAdmin],
+            // Uniforms, radios and gear (the owner's choice, 2026-10-23): Operations issues to the
+            // guards it deploys (a Satellite: its region's), Admin to office staff
+            // (EquipmentIssue::canIssueTo says which person).
+            self::IssueEquipment => [Role::OperationsHq, Role::SatelliteOperations, Role::Admin, Role::SuperAdmin],
+            // The item list and prices: Admin keeps the stock list.
+            self::ManageEquipmentItems => [Role::Admin, Role::SuperAdmin],
         };
     }
 

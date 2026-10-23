@@ -281,7 +281,7 @@ class Payroll extends Component
             'deductionType' => ['required', Rule::enum(DeductionType::class)],
             'deductionInstallment' => ['required', 'numeric', 'min:0.01', 'max:999999'],
             'deductionTotal' => [Rule::requiredIf(fn () => DeductionType::tryFrom($this->deductionType)?->tracksBalance() ?? false), 'nullable', 'numeric', 'gte:deductionInstallment', 'max:9999999'],
-            'deductionBasis' => ['required', Rule::enum(DeductionAuthorizationBasis::class)],
+            'deductionBasis' => ['required', Rule::in(array_map(fn (DeductionAuthorizationBasis $basis) => $basis->value, DeductionAuthorizationBasis::choices()))],
         ], [], ['deductionInstallment' => 'installment', 'deductionTotal' => 'total amount', 'deductionBasis' => 'authorization']);
 
         $deduction = $saveDeduction->handle(

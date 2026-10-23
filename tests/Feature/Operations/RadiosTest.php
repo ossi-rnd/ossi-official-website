@@ -81,5 +81,5 @@ it('shows a guard\'s radio on their resignation clearance', function () {
     app(AcceptResignation::class)->handle($resignation, $hr, CarbonImmutable::parse('2026-11-22'), null);
 
     Livewire::actingAs($hr)->test(Resignations::class)->call('open', $resignation->id)
-        ->assertSee('Radio still with them: Motorola XiR P3688 (SN 123ABC)');
+        ->assertSee('Company property still with them: Motorola XiR P3688 (SN 123ABC)');
 });

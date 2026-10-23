@@ -44,6 +44,7 @@ final class SaveEmployeeDeduction
                         DeductionAuthorizationBasis::Employee => null, // their sentence, once they authorize
                         DeductionAuthorizationBasis::Paper => "Signed on paper; recorded by {$actor->name}.",
                         DeductionAuthorizationBasis::Law => 'Government loan (SSS or Pag-IBIG): the employer deducts it as the law requires.',
+                        DeductionAuthorizationBasis::LossOrDamage => "Company item lost or damaged through their fault; decided by {$actor->name} after they were heard.",
                     },
                     'authorized_at' => $asked ? null : now(),
                 ]);

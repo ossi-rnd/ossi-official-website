@@ -2,7 +2,7 @@
 <div @class(['hidden' => $this->waiting->isEmpty()])>
     {{-- Deductions Accounting asked them to authorize (Labor Code Art. 113): nothing is taken until they do. --}}
     @if ($this->waiting->isNotEmpty())
-        <x-ui.card title="Please review" description="Accounting added these to your payslips. Nothing is deducted until you authorize it.">
+        <x-ui.card title="Please review" description="These were added to your payslips (a loan, or a uniform you received). Nothing is deducted until you authorize it.">
             <div class="px-6 pt-4">@include('livewire.partials.acknowledgement-language')</div>
             <ul class="divide-y divide-gray-100 dark:divide-gray-800">
                 @foreach ($this->waiting as $deduction)

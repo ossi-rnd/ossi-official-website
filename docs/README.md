@@ -80,6 +80,9 @@ A request, end to end: **Route** (`can:` gate) → **Livewire component** (re-ch
 29. [Notices to Explain (the twin-notice rule)](features/29-notices-to-explain.md)
 30. [Promotions and position history](features/30-promotions.md)
 31. [Reimbursements (office staff only)](features/31-reimbursements.md)
+32. [Birthdays, petty cash, NTC radios and referrals](features/32-birthdays-petty-cash-radios-referrals.md)
+33. [Notifications: who is told what](features/33-notifications.md)
+34. [Equipment: uniforms, radios and gear (authority to deduct, accountability, damage and loss)](features/34-equipment.md)
 
 What changed, day by day, and why: [CHANGELOG.md](CHANGELOG.md).
 

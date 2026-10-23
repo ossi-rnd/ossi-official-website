@@ -14,6 +14,7 @@ use App\Enums\Role;
 use App\Livewire\Concerns\ChoosesResignationReasons;
 use App\Livewire\Concerns\InteractsWithUser;
 use App\Models\EmployeeDeduction;
+use App\Models\EquipmentIssue;
 use App\Models\Radio;
 use App\Models\Resignation;
 use App\Models\User;
@@ -198,9 +199,10 @@ class Resignations extends Component
     }
 
     /**
-     * Radios still with the person (the NTC masterlist), for "Firearm, radio and post equipment returned".
+     * Company property still with the person, for "Firearm, radio and post equipment returned":
+     * radios on the NTC masterlist, and gear issued on Equipment and not returned.
      *
-     * @return list<string> "Motorola XiR P3688 (SN 123ABC)"
+     * @return list<string> "Motorola XiR P3688 (SN 123ABC)", "Flashlight"
      */
     #[Computed]
     public function radiosHeld(): array
@@ -212,8 +214,12 @@ class Resignations extends Component
         }
 
         $radios = Radio::query()->where('assigned_user_id', $opened->user_id)->orderBy('serial_number')->get()->all();
+        $gear = EquipmentIssue::query()->outstanding()->where('user_id', $opened->user_id)->whereNull('radio_id')->orderBy('id')->get()->all();
 
-        return array_values(array_map(fn (Radio $radio) => "{$radio->brand} {$radio->model} (SN {$radio->serial_number})", $radios));
+        return [
+            ...array_map(fn (Radio $radio) => "{$radio->brand} {$radio->model} (SN {$radio->serial_number})", $radios),
+            ...array_map(fn (EquipmentIssue $issue) => $issue->describe(), $gear),
+        ];
     }
 
     /**

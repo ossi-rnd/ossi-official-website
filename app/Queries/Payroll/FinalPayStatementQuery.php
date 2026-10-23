@@ -2,7 +2,6 @@
 
 namespace App\Queries\Payroll;
 
-use App\Enums\DeductionType;
 use App\Models\EmployeeDeduction;
 use App\Models\PayslipRecord;
 use App\Models\Resignation;
@@ -95,10 +94,10 @@ final class FinalPayStatementQuery
         $owed = [];
         $notDeducted = 0;
         $consent = $resignation->deduction_consent_at !== null;
-        $balanceTypes = array_map(fn (DeductionType $type) => $type->value, array_values(array_filter(DeductionType::cases(), fn (DeductionType $type) => $type->tracksBalance())));
-
-        $debts = EmployeeDeduction::query()->active()->where('user_id', $userId)->whereIn('type', $balanceTypes)
-            ->where('remaining_balance', '>', 0)->orderBy('id')->get();
+        // Anything with a balance left: loans, cash advances, load, and a charged uniform or a
+        // lost or damaged item (Equipment), whose balance is set when it's charged.
+        $debts = EmployeeDeduction::query()->active()->where('user_id', $userId)
+            ->whereNotNull('remaining_balance')->where('remaining_balance', '>', 0)->orderBy('id')->get();
 
         foreach ($debts as $deduction) {
             $amount = round((float) $deduction->remaining_balance, 2);

@@ -273,7 +273,7 @@
                         @if (\App\Enums\DeductionType::tryFrom($deductionType)?->needsAuthorization())
                             <div>
                                 <x-ui.select label="Authorization" wire:model.live="deductionBasis">
-                                    @foreach (\App\Enums\DeductionAuthorizationBasis::cases() as $basis)
+                                    @foreach (\App\Enums\DeductionAuthorizationBasis::choices() as $basis)
                                         <option value="{{ $basis->value }}">{{ $basis->choice() }}</option>
                                     @endforeach
                                 </x-ui.select>

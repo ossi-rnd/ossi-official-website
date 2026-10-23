@@ -4,6 +4,26 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Equipment: uniforms, radios and gear, with authority to deduct and accountability** ([34](features/34-equipment.md))
+- **Who issues** (the owner's choice): Operations issues to the guards it deploys (a Satellite: its region's); Admin issues to office staff and keeps the item list and prices. New abilities: `issue-equipment` and `manage-equipment-items`.
+- **Every uniform is charged:** its price becomes a deduction waiting for the employee's authority to deduct on My Payslips (Art. 113). Nothing is taken until they authorize it.
+- **Company property** (radios, flashlights…): the employee confirms receipt and accountability, word for word in English or Filipino. Nothing is deducted.
+- **Damage or loss** is charged only after due process, following DOLE's conditions for loss or damage deductions:
+  - the employee has 5 days to explain;
+  - their head (`Heads`) decides, with reasons;
+  - the charge is the actual loss, with how it was arrived at;
+  - each payslip takes at most 20% of a week's wages.
+  
+  A new deduction basis, "Loss or damage, after due process", is used for this; Accounting's own picker doesn't offer it.
+- **Requests:** employees ask on **My Equipment**; the issuers are told and either issue the item or turn it down with a reason.
+- **Radios** issued here update the masterlist.
+- **Clearance and final pay:**
+  - the resignation clearance now lists unreturned gear as well as radios ("Company property still with them");
+  - final pay now collects any deduction with a balance left, so a uniform's unpaid balance is included. Before, it looked only at loans, cash advances and load, and those were the only ones with balances.
+- **My defaults, to confirm:** 5 days to explain (as for a Notice to Explain), and a 6-day week for the 20% limit. **For the owner to check with DOLE or counsel:** charging guards for every uniform.
+- **Tests:** 17 new (979 in all).
+- **Slip, caught and fixed:** the menu code that reads the new tables was saved several minutes before the pilot was migrated, so pilot pages could fail in that window. The Radios lesson again. The pilot was then backed up, migrated and checked (login page 200).
+
 **Dark mode: no more white flash on hover**
 - **The bug:** the "Common hours" chips on the shift picker turned white when hovered in dark mode. They had a light hover (`hover:bg-gray-50`) and no dark one, written inside an Alpine `x-bind:class` string.
 - **New check:** `DarkModeColorsTest` now fails on any light hover background (`hover:bg-white`, `-50`, `-100`, `-200`) without a `dark:hover:bg-…`, in `class="…"` and in class-only strings. See-through white on the photo lightbox is allowed, since that overlay is dark in both themes.

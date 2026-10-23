@@ -128,7 +128,7 @@
                                         <span @class(['text-gray-800 dark:text-gray-100', 'line-through decoration-gray-300 dark:decoration-gray-600' => $done])>{{ $item->label() }}</span>
                                         <span class="block text-xs text-gray-500 dark:text-gray-400">
                                             @if ($done) {{ $done['by'] }} · {{ \Carbon\CarbonImmutable::parse($done['at'])->format('M j, g:i A') }}
-                                            @elseif ($item === \App\Enums\ClearanceItem::FirearmAndEquipment && $this->radiosHeld !== []) Radio still with them: {{ implode(', ', $this->radiosHeld) }}. Mark it returned on Radios.
+                                            @elseif ($item === \App\Enums\ClearanceItem::FirearmAndEquipment && $this->radiosHeld !== []) Company property still with them: {{ implode(', ', $this->radiosHeld) }}. Mark it returned on Equipment (or Radios).
                                             @elseif ($item === \App\Enums\ClearanceItem::LoansSettled) {{ $this->owed > 0 ? '₱'.number_format($this->owed, 2).' still owed on loans and load' : 'Nothing owed' }}
                                             @elseif ($item === \App\Enums\ClearanceItem::FinalPay) due by {{ $opened->finalPayDue()->format('M j, Y') }}
                                             @elseif ($item === \App\Enums\ClearanceItem::Certificate) within 3 days of their request (DOLE Labor Advisory 06-20)

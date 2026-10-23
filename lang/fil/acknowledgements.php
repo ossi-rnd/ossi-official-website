@@ -10,6 +10,7 @@ return [
         'read' => 'Nabasa ko at naiintindihan ko ang mga ito',
         'certify' => 'Pinatutunayan kong totoo ang mga ito',
         'authorize' => 'Pinahihintulutan ko ito',
+        'received' => 'Natanggap ko ito',
         'language' => 'Basahin sa',
     ],
 
@@ -42,5 +43,10 @@ return [
     'deduction' => [
         'with_total' => 'Pinahihintulutan ko ang kumpanya na ibawas ang :each sa bawat payslip para sa aking :what hanggang mabayaran ang :total (Labor Code Art. 113).',
         'recurring' => 'Pinahihintulutan ko ang kumpanya na ibawas ang :each sa bawat payslip para sa :what (Labor Code Art. 113).',
+    ],
+
+    'equipment' => [
+        'company' => 'Natanggap ko ang :what nang nasa maayos na kondisyon. Ari-arian pa rin ito ng kumpanya: iingatan ko ito, gagamitin lamang sa trabaho, at isasauli kapag hiningi o kapag ako ay umalis. Kung mawala o masira ito dahil sa aking kapabayaan, maaari akong singilin ng kumpanya, ngunit pagkatapos lamang akong mapakinggan, at hindi hihigit sa tunay na halaga ng nawala.',
+        'charged' => 'Natanggap ko ang :what, na nagkakahalaga ng :total. Babayaran ko ito ayon sa aking pahintulot sa My Payslips.',
     ],
 ];

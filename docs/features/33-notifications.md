@@ -36,6 +36,8 @@ Last audited 2026-10-22, across all 172 Actions. The audit added the **New** row
 | Resignation accepted, completed | the employee | ResignationNotice |
 | Final pay released | the employee | FinalPayNotice |
 | Referral hired, not hired, no bonus | the referrer | ReferralNotice |
+| Equipment issued (confirm; a uniform also asks the authority to deduct), request not approved, returned | the employee | UpdateNotice (+ DeductionAuthorizationNotice) |
+| Equipment reported damaged or lost (explain within 5 days), decided (charged or not) | the employee, bell and email | UpdateNotice |
 | Announcements | the audience chosen | AnnouncementPublished |
 
 ## Staff roles
@@ -58,6 +60,8 @@ Last audited 2026-10-22, across all 172 Actions. The audit added the **New** row
 | Birthdays today | HR, and Operations for guards | BirthdayToday |
 | Documents / radio NTC permits nearing expiry | Admin (+ Operation HQ for radios) | DocumentDueNotice, RadioPermitDue |
 | Reimbursement filed, approved (to pay) | the President or VP, Accounting | ReimbursementNotice |
+| Equipment requested | Operations (Operation HQ + the region's Satellite) for a guard, Admin for office staff | UpdateNotice |
+| Equipment damage or loss explained | whoever reported it, and the employee's head | UpdateNotice |
 | Payroll concern, complaint, resignation, referral, training request filed | the handlers | each one's notice |
 | Final pay to sign, returned, released | the signers, Accounting | FinalPayNotice |
 | Notice explained, demerit replied to | the issuer / giver | NoticeToExplainNotice, MeritNotice |
