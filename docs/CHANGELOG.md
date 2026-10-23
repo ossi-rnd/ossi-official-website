@@ -4,6 +4,9 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-22
 
+**GitHub CI fixed: emails had no sender**
+- The first CI run on GitHub failed: 36 of 897 tests stopped with "An email must have a From or a Sender header". On GitHub, `.env` is a copy of `.env.example`, whose `MAIL_FROM_ADDRESS=` was **blank**. A blank value isn't "missing", so the fallback in `config/mail.php` never applied. It passed on the office PC only because the real `.env` sets the address. Now `phpunit.xml` sets `MAIL_FROM_ADDRESS` and `MAIL_FROM_NAME` for tests, and `.env.example` has a placeholder address. I found it by running the committed code in a fresh clone, the same way CI does (`composer setup`, then `composer ci:check`).
+
 **Ready for GitHub and a second machine**
 - `CLAUDE.md` (project root) is now the project's memory for Claude on any machine. It covers what the system is, the owner's standing rules, "done means", the safety rules learned the hard way, the pilot, how to move to a laptop, and the open items. It used to be git-ignored; it's committed now.
 - `.gitignore` also excludes, explicitly: every `*.sqlite` (the dev database, the pilot database and all backups), `database/pilot-backups/`, uploaded files in `storage/app/private`, and logs. A dry run of `git add` lists 959 files, with no databases, `.env`, uploads, logs, `vendor` or `node_modules`. The app key and the Gmail app password are only in `.env`.

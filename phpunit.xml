@@ -27,6 +27,9 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
+        <!-- Tests never depend on a machine's .env: on GitHub, .env is a copy of .env.example. -->
+        <env name="MAIL_FROM_ADDRESS" value="noreply@example.test"/>
+        <env name="MAIL_FROM_NAME" value="OSSI"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
