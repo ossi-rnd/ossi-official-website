@@ -19,7 +19,7 @@ use InvalidArgumentException;
  * pays the smaller of logged and approved overtime, day by day.
  *
  * Who decides depends on who's asking, like leave: an office staffer's head (Heads: HR for
- * Admin, Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR);
+ * Admin and others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ, Accounting);
  * Operations, HR or Admin decide guards'.
  */
 final class ReviewOvertimeRequest

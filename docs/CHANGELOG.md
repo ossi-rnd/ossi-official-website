@@ -4,6 +4,35 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Demo accounts: President and Vice President, no more "Executive"**
+- **The accounts:** the seeded `executive@example.test` is now `president@example.test`, and there's a new `vp@example.test`. Neither has an employee record, matching the real accounts. The old account also carried the retired "President" position.
+- **Docs updated:**
+  - the study guide's account table, with each role's line matching the chain of heads;
+  - every "Try it" step;
+  - `docs/README.md` and CLAUDE.md;
+  - the seeders' messages.
+- **No real data touched:** the change only affects a fresh `migrate:fresh --seed`. The dev and pilot databases have no demo accounts.
+
+**201 file: "Only what needs action" shows what it does**
+- **The problem:** the owner ticked the box and nothing changed. That was correct: on a new 201 file nothing is on file yet, so every document needs action and the filter hides nothing.
+- **The checkbox now shows its count:** "Only what needs action (20 of 21)".
+- **It's offered only when it would change the list:** some documents are done and some aren't, or it's already ticked (so it can be turned off).
+- **Test:** a new test checks both behaviours (`RequirementsTest`).
+
+**Operation HQ and Accounting answer to the President or VP**
+- **Owner's choice:** in a security agency, Operations and Accounting usually report to the President / GM, and HR administers leave rather than heading other departments.
+- **The chain now:**
+  - guard → Satellite + Operation HQ endorse, HR decides (no change);
+  - HR, **Operation HQ, Accounting** → the President or VP;
+  - Satellite → Operation HQ;
+  - Admin and others → HR.
+- **What changed for these two roles:** the President or VP now decide their leave and overtime, approve their time away, and issue their Notices to Explain and merits.
+- **HR stays informed, as timekeeper:**
+  - HR sees every non-HR staffer's leave, overtime and time away, view only (`Heads::constrainOfficeStaffSeenBy`).
+  - HR is copied on attendance alerts for Operation HQ, Accounting and Satellites (`Heads::informed`, `Heads::toTell`).
+- **Screens:** the tab hints now read "HR, Operation HQ and Accounting staff's are yours to decide" for the President or VP, and "Admin and other staff's are yours to decide" for HR.
+- **Tests:** tests that used an Accounting clerk as "someone HR heads" now use an Admin staffer, and a new test covers Accounting and Operation HQ going to the President or VP. 960 pass.
+
 **Tests for who is above whom (`ChainOfHeadsMatrixTest`)**
 - **What it checks:** each head can act for their own people in **every** flow at once: deciding leave and overtime, approving time away, issuing a Notice to Explain, giving a merit. Nobody can act **upward** (Accounting → HR, a Satellite → Operation HQ), **sideways** (HR → another HR, Admin → Accounting, one Satellite → another), **across the chain** (HR → a Satellite, Operation HQ → Accounting; the President or VP only monitor non-HR staff), or **for themselves**.
 - **Also covered:**

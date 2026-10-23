@@ -141,7 +141,8 @@ class AwayMonitor extends Component
     /**
      * Absences this audience covers: guards in the viewer's reach, or office staff (an account
      * with no HR profile counts as office staff): all of them for the President or VP and the
-     * Super Admin, else only those the viewer heads (Heads: HR, or Operation HQ for Satellites).
+     * Super Admin, every non-HR staffer for HR, else only those the viewer heads (Operation HQ:
+     * Satellites). Only the head approves (ApproveAway::canApprove).
      *
      * @return Builder<AwayLog>
      */
@@ -151,8 +152,7 @@ class AwayMonitor extends Component
 
         return AwayLog::query()->whereHas('user', fn (Builder $user) => match (true) {
             $this->scope !== 'office' => $user->visibleTo($viewer)->whereHas('employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false)),
-            Heads::seesAllOfficeStaff($viewer) => $user->officeStaff(),
-            default => Heads::constrainOfficeStaffHeadedBy($user, $viewer),
+            default => Heads::constrainOfficeStaffSeenBy($user, $viewer),
         });
     }
 

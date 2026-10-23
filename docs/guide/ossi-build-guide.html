@@ -199,11 +199,12 @@ details.file pre { margin: 0; padding: 14px; overflow-x: auto; background: var(-
   <div class="table-wrap"><table>
     <tr><th>Demo account</th><th>Role</th><th>Use it to see</th></tr>
     <tr><td><code>superadmin@example.test</code></td><td>Super Admin</td><td>Everything: roles, shifts, holidays, clients, audit log</td></tr>
-    <tr><td><code>executive@example.test</code></td><td>Executive</td><td>Monitoring without editing, announcements, approving office staff's leave</td></tr>
+    <tr><td><code>president@example.test</code></td><td>President</td><td>Monitoring everyone, announcements; decides HR, Operation HQ and Accounting staff's leave, overtime and time away; signs final pay</td></tr>
+    <tr><td><code>vp@example.test</code></td><td>Vice President</td><td>The same as the President (either one can act)</td></tr>
     <tr><td><code>admin@example.test</code></td><td>Admin</td><td>Documents and licenses, training, holidays, Borrow Load, guards' leave</td></tr>
-    <tr><td><code>hr@example.test</code></td><td>HR</td><td>Employee records, guards' leave, overtime, complaints</td></tr>
+    <tr><td><code>hr@example.test</code></td><td>HR</td><td>Employee records, guards' leave, overtime, complaints; decides Admin staff's leave and sees all non-HR office staff's (view only)</td></tr>
     <tr><td><code>accounting@example.test</code></td><td>Accounting</td><td>Payroll, daily rates, 13th month, Borrow Load approval</td></tr>
-    <tr><td><code>opshq@example.test</code></td><td>Operation HQ</td><td>Relievers, overtime approval, leave monitoring (all regions)</td></tr>
+    <tr><td><code>opshq@example.test</code></td><td>Operation HQ</td><td>Relievers, overtime approval, endorsing guards' leave (all regions); decides the Satellite staff's leave</td></tr>
     <tr><td><code>satellite@example.test</code></td><td>Satellite Operation</td><td>The same for <b>one region</b>, plus Change deployment. Any of the 18 regions can be set on Roles &amp; Access; the demo account is set to Region IV-A</td></tr>
     <tr><td><code>developer@example.test</code></td><td>Developer</td><td>Audit log only</td></tr>
     <tr><td><code>employee@example.test</code></td><td>Employee (Maria Santos)</td><td>Clock in, Report Absence, leave, overtime, payslips, complaints, company policy</td></tr>
@@ -918,8 +919,8 @@ sequenceDiagram
 <span class="c">/**
  * Who decides depends on who&#039;s asking: HR decides guards&#039; leave (final),
  * once the region&#039;s Satellite Operation and Operation HQ have endorsed it
- * (EndorseLeaveRequest); an office staffer&#039;s head decides theirs (Heads: HR for Admin,
- * Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR).
+ * (EndorseLeaveRequest); an office staffer&#039;s head decides theirs (Heads: HR for Admin and
+ * others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ, Accounting).
  */</span>
 <span class="k">final</span> <span class="k">class</span> ReviewLeaveRequest
 {
@@ -1275,7 +1276,7 @@ sequenceDiagram
     <tr><td>Why not spatie/laravel-permission?</td><td>The old app's permission rows were never checked. Enums say the real rules honestly, need no package, and PHPStan can check every use.</td></tr>
     <tr><td>Can a Super Admin lock everyone out?</td><td>No. <code>SyncUserRoles</code> refuses to remove your own Super Admin role and refuses to remove the last one.</td></tr>
   </table></div>
-  <div class="try"><b>Try it</b><ol><li>As <code>executive@example.test</code>: Leave Requests. Guards' rows say "approved by HR"; office staff's rows have Review.</li><li>As <code>satellite@example.test</code>: Employees lists only guards in that account's region (the demo sets Region IV-A). As super admin, change it on Roles &amp; Access → Region covered, and the list follows.</li></ol></div>
+  <div class="try"><b>Try it</b><ol><li>As <code>president@example.test</code> (or <code>vp@example.test</code>): Leave Requests. Guards' rows say "approved by HR"; HR, Operation HQ and Accounting staff's rows have Review; other office staff's say "View only".</li><li>As <code>satellite@example.test</code>: Employees lists only guards in that account's region (the demo sets Region IV-A). As super admin, change it on Roles &amp; Access → Region covered, and the list follows.</li></ol></div>
 </section>
 
 <!-- ============================== 03 ============================== -->
@@ -4444,11 +4445,11 @@ flowchart TD
 <!-- ============================== 07 ============================== -->
 <section class="chapter" id="requests">
   <div class="chapter-head"><span class="no">07</span><h2>Leave &amp; overtime</h2></div>
-  <p class="lead">Employees file, supervisors decide: guards' leave climbs Operations to HR, and their overtime goes to HR, Admin or Operations (a Satellite only in its region). Office staff's leave and overtime go to <b>their head</b> (<code>App\Support\Heads</code>, the owner's chain): HR for Admin, Accounting and Operation HQ; Operation HQ for a Satellite; the President or VP for HR. The President or VP still see them all. Reviews lock the row so two supervisors can't both decide, nobody reviews their own request, and approved overtime can be less than requested, never more. Payroll later pays the smaller of logged and approved overtime, day by day.</p>
+  <p class="lead">Employees file, supervisors decide: guards' leave climbs Operations to HR, and their overtime goes to HR, Admin or Operations (a Satellite only in its region). Office staff's leave and overtime go to <b>their head</b> (<code>App\Support\Heads</code>, the owner's chain): HR for Admin and others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ and Accounting. The President or VP still see them all, and HR sees every non-HR staffer's (view only). Reviews lock the row so two supervisors can't both decide, nobody reviews their own request, and approved overtime can be less than requested, never more. Payroll later pays the smaller of logged and approved overtime, day by day.</p>
   <div class="why">
-    <div><b>One chain of heads</b><span><code>App\Support\Heads</code> answers both "who heads this person" (<code>of</code>, <code>label</code>) and "does X head Y" (<code>isHeadOf</code>). It covers a guard → Operation HQ + the region's Satellite; HR → the President or VP; a Satellite → Operation HQ; anyone else in the office → HR. Leave, overtime, time away, attendance alerts, Notices to Explain and merits all ask it, so the chain lives in one place. A Satellite's leave waits at stage <code>hq</code>, where Operation HQ <b>decides</b> it rather than endorsing it on to HR as for a guard. <code>ChainOfHeadsMatrixTest</code> asks all five flows at once for each pair: a head acts for their own people, never upward, sideways, across the chain or for themselves. It found one hole: the President has no employee record, so they fell into the default group and HR counted as their "head". Now nobody heads the Super Admin, President or VP.</span></div>
+    <div><b>One chain of heads</b><span><code>App\Support\Heads</code> answers both "who heads this person" (<code>of</code>, <code>label</code>) and "does X head Y" (<code>isHeadOf</code>). It covers a guard → Operation HQ + the region's Satellite; HR, Operation HQ and Accounting → the President or VP; a Satellite → Operation HQ; anyone else in the office (Admin…) → HR. Operation HQ and Accounting first sat under HR. The owner moved them after comparing with how agencies usually run: Operations and Accounting answer to the President / GM, while HR <i>administers</i> leave rather than heading other departments. So HR keeps a view-only window on every non-HR staffer, and <code>Heads::toTell</code> copies HR on their attendance alerts. Leave, overtime, time away, attendance alerts, Notices to Explain and merits all ask it, so the chain lives in one place. A Satellite's leave waits at stage <code>hq</code>, where Operation HQ <b>decides</b> it rather than endorsing it on to HR as for a guard. <code>ChainOfHeadsMatrixTest</code> asks all five flows at once for each pair: a head acts for their own people, never upward, sideways, across the chain or for themselves. It found one hole: the President has no employee record, so they fell into the default group and HR counted as their "head". Now nobody heads the Super Admin, President or VP.</span></div>
   </div>
-  <details class="file"><summary>app/Support/Heads.php<span class="lines">154 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Support/Heads.php<span class="lines">202 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Support;
 
@@ -4463,14 +4464,15 @@ flowchart TD
  * The owner&#039;s chain of heads (2026-10-23): who supervises whom, in one place.
  *
  *   a guard                                         Operations: Operation HQ, and the Satellite of their client&#039;s region
- *   HR                                              the President or Vice President
+ *   HR, Operation HQ, Accounting                    the President or Vice President
  *   a Satellite Operation                           Operation HQ
- *   other office staff (Admin, Accounting,
- *   Operation HQ, Developer, staff with no role)    HR
+ *   other office staff (Admin, Developer,
+ *   staff with no role)                             HR
  *
  * Used for attendance alerts, deciding office staff&#039;s leave and overtime, watching their
- * time away, and Notices to Explain / merits. The Super Admin may act for any head (backup),
- * and the President or Vice President still SEE every office staffer&#039;s requests (they monitor).
+ * time away, and Notices to Explain / merits. The Super Admin may act for any head (backup).
+ * The President or Vice President SEE every office staffer&#039;s requests, and HR every non-HR
+ * office staffer&#039;s (they monitor; HR also gets their attendance alerts, as timekeeper).
  */</span>
 <span class="k">final</span> <span class="k">class</span> Heads
 {
@@ -4489,7 +4491,7 @@ flowchart TD
 
         <span class="k">return</span> <span class="k">match</span> (<span class="k">true</span>) {
             $person-&gt;employeeProfile !== <span class="k">null</span> &amp;&amp; ! $person-&gt;employeeProfile-&gt;is_office_staff =&gt; self::OPERATIONS,
-            $person-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; self::LEADERSHIP,
+            $person-&gt;<span class="f">hasAnyRole</span>(...self::<span class="f">underLeadership</span>()) =&gt; self::LEADERSHIP,
             $person-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) =&gt; self::OPERATIONS_HQ,
             <span class="k">default</span> =&gt; self::HR,
         };
@@ -4530,6 +4532,37 @@ flowchart TD
         <span class="k">return</span> $heads-&gt;<span class="f">reject</span>(<span class="k">fn</span> (User $head) =&gt; $head-&gt;<span class="f">is</span>($person))-&gt;<span class="f">values</span>();
     }
 
+    <span class="c">/**
+     * HR, kept informed (as timekeeper) about office staff it doesn&#039;t head: Operation HQ,
+     * Accounting and the Satellites. Never about HR staff.
+     *
+     * @return Collection&lt;int, User&gt;
+     */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">informed</span>(User $person): Collection
+    {
+        <span class="k">if</span> (self::<span class="f">isTopOfChain</span>($person) || $person-&gt;<span class="f">hasRole</span>(Role::Hr) || ! <span class="f">in_array</span>(self::<span class="f">groupOf</span>($person), [self::LEADERSHIP, self::OPERATIONS_HQ], <span class="k">true</span>)) {
+            <span class="k">return</span> <span class="k">new</span> Collection;
+        }
+
+        <span class="k">return</span> User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::Hr])-&gt;<span class="f">get</span>()-&gt;<span class="f">reject</span>(<span class="k">fn</span> (User $hr) =&gt; $hr-&gt;<span class="f">is</span>($person))-&gt;<span class="f">values</span>();
+    }
+
+    <span class="c">/**
+     * Everyone to tell about this person: their heads, then HR when it&#039;s only informed.
+     *
+     * @return Collection&lt;int, User&gt;
+     */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">toTell</span>(User $person, ?Client $client = <span class="k">null</span>): Collection
+    {
+        <span class="k">return</span> self::<span class="f">of</span>($person, $client)-&gt;<span class="f">merge</span>(self::<span class="f">informed</span>($person))-&gt;<span class="f">unique</span>(<span class="s">&#039;id&#039;</span>)-&gt;<span class="f">values</span>();
+    }
+
+    <span class="c">/** @return list&lt;Role&gt; office roles the President or VP head directly */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">underLeadership</span>(): array
+    {
+        <span class="k">return</span> [Role::Hr, Role::OperationsHq, Role::Accounting];
+    }
+
     <span class="c">/** Whether $head heads $person (and so may decide for them). The Super Admin may, as backup. */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">isHeadOf</span>(User $head, User $person): bool
     {
@@ -4551,7 +4584,8 @@ flowchart TD
 
     <span class="c">/**
      * Narrows a query of users to the OFFICE staff this viewer heads: HR → office staff who aren&#039;t
-     * HR or a Satellite; Operation HQ → Satellites; the President or VP → HR; Super Admin → all.
+     * HR, Operation HQ, Accounting or a Satellite; Operation HQ → Satellites; the President or VP →
+     * HR, Operation HQ and Accounting; Super Admin → all.
      *
      * @param  Builder&lt;User&gt;  $users
      */</span>
@@ -4562,10 +4596,25 @@ flowchart TD
 
         <span class="k">match</span> (<span class="k">true</span>) {
             $viewer-&gt;<span class="f">hasRole</span>(Role::SuperAdmin) =&gt; <span class="k">null</span>,
-            $viewer-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">leadership</span>()) =&gt; $users-&gt;<span class="f">whereHas</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::Hr)),
+            $viewer-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">leadership</span>()) =&gt; $users-&gt;<span class="f">whereHas</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(...self::<span class="f">underLeadership</span>())),
             $viewer-&gt;<span class="f">hasRole</span>(Role::OperationsHq) =&gt; $users-&gt;<span class="f">whereHas</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::SatelliteOperations)),
-            $viewer-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; $users-&gt;<span class="f">whereDoesntHave</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::Hr, Role::SatelliteOperations)),
+            $viewer-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; $users-&gt;<span class="f">whereDoesntHave</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::SatelliteOperations, ...self::<span class="f">underLeadership</span>())),
             <span class="k">default</span> =&gt; $users-&gt;<span class="f">whereRaw</span>(<span class="s">&#039;1 = 0&#039;</span>),
+        };
+    }
+
+    <span class="c">/**
+     * Narrows a query of users to the OFFICE staff whose requests and time away this viewer sees:
+     * the ones they head, plus, for HR, every non-HR office staffer (monitor only).
+     *
+     * @param  Builder&lt;User&gt;  $users
+     */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">constrainOfficeStaffSeenBy</span>(Builder $users, User $viewer): void
+    {
+        <span class="k">match</span> (<span class="k">true</span>) {
+            self::<span class="f">seesAllOfficeStaff</span>($viewer) =&gt; $users-&gt;<span class="f">officeStaff</span>(),
+            $viewer-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; $users-&gt;<span class="f">officeStaff</span>()-&gt;<span class="f">whereDoesntHave</span>(<span class="s">&#039;roles&#039;</span>, <span class="k">fn</span> (Builder $userRoles) =&gt; $userRoles-&gt;<span class="f">where</span>(<span class="s">&#039;role&#039;</span>, Role::Hr-&gt;value)),
+            <span class="k">default</span> =&gt; self::<span class="f">constrainOfficeStaffHeadedBy</span>($users, $viewer),
         };
     }
 
@@ -4621,8 +4670,8 @@ flowchart TD
 <span class="c">/**
  * Who decides depends on who&#039;s asking: HR decides guards&#039; leave (final),
  * once the region&#039;s Satellite Operation and Operation HQ have endorsed it
- * (EndorseLeaveRequest); an office staffer&#039;s head decides theirs (Heads: HR for Admin,
- * Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR).
+ * (EndorseLeaveRequest); an office staffer&#039;s head decides theirs (Heads: HR for Admin and
+ * others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ, Accounting).
  */</span>
 <span class="k">final</span> <span class="k">class</span> ReviewLeaveRequest
 {
@@ -4733,7 +4782,7 @@ flowchart TD
  * pays the smaller of logged and approved overtime, day by day.
  *
  * Who decides depends on who&#039;s asking, like leave: an office staffer&#039;s head (Heads: HR for
- * Admin, Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR);
+ * Admin and others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ, Accounting);
  * Operations, HR or Admin decide guards&#039;.
  */</span>
 <span class="k">final</span> <span class="k">class</span> ReviewOvertimeRequest
@@ -10396,7 +10445,8 @@ stateDiagram-v2
 }</code></pre></details>
 
   <h3>One component, two audiences</h3>
-  <details class="file"><summary>app/Livewire/People/RequirementsChecklist.php<span class="lines">223 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <p>A filter that changes nothing looks broken. "Only what needs action (20 of 21)" says how many documents it keeps, and <code>offersFilter()</code> shows the checkbox only when some documents are done and some aren't. On a brand-new 201 file, where everything still needs action, it doesn't appear.</p>
+  <details class="file"><summary>app/Livewire/People/RequirementsChecklist.php<span class="lines">240 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Livewire\People;
 
@@ -10425,6 +10475,7 @@ stateDiagram-v2
  * @property-read EmployeeProfile $profile
  * @property-read list&lt;RequirementItem&gt; $items
  * @property-read list&lt;RequirementItem&gt; $visibleItems
+ * @property-read int $openCount
  * @property-read array{total: int, on_file: int, submitted: int, expired: int} $summary
  * @property-read bool $canReview
  * @property-read RequirementItem|null $activeItem
@@ -10485,6 +10536,22 @@ stateDiagram-v2
         <span class="k">return</span> $this-&gt;onlyOpen
             ? <span class="f">array_values</span>(<span class="f">array_filter</span>($this-&gt;items, <span class="k">fn</span> (RequirementItem $item) =&gt; $item-&gt;<span class="f">needsAction</span>()))
             : $this-&gt;items;
+    }
+
+    <span class="c">/** Documents still missing, waiting for HR&#039;s check, or expired. */</span>
+    #[Computed]
+    <span class="k">public</span> <span class="k">function</span> <span class="f">openCount</span>(): int
+    {
+        <span class="k">return</span> <span class="f">count</span>(<span class="f">array_filter</span>($this-&gt;items, <span class="k">fn</span> (RequirementItem $item) =&gt; $item-&gt;<span class="f">needsAction</span>()));
+    }
+
+    <span class="c">/**
+     * The &quot;Only what needs action&quot; filter is offered only when it would change the list: some
+     * documents are done and some aren&#039;t (or it&#039;s already on, so it can be turned off).
+     */</span>
+    <span class="k">public</span> <span class="k">function</span> <span class="f">offersFilter</span>(): bool
+    {
+        <span class="k">return</span> $this-&gt;onlyOpen || ($this-&gt;openCount &gt; <span class="n">0</span> &amp;&amp; $this-&gt;openCount &lt; <span class="f">count</span>($this-&gt;items));
     }
 
     <span class="c">/**
@@ -13502,7 +13569,7 @@ flowchart TD
     <div><b>Early is free, not paid</b><span>Clock in up to an hour before; late counts from the start, night differential only inside the duty, overtime only when approved.</span></div>
     <div><b>Geofence both ways</b><span>Clock-in and clock-out must be inside the client's radius. The phone's stated error widens it by 50 m at most, and a fix rougher than ±100 m is refused.</span></div>
     <div><b>Manual, never silent</b><span>When a phone or GPS fails, Operations records it by hand with a reason: marked Manual, audited, and never over a selfie punch.</span></div>
-    <div><b>Nobody forgets quietly</b><span><code>SendAttendanceAlerts</code> runs every 5 minutes. Someone still clocked in after their shift is reminded first. If it's still open later, their head hears, following the owner's chain (<code>headsOf</code>): a guard → Operation HQ and the region's Satellite; HR → the President or VP; a Satellite → Operation HQ; other office staff (Admin, Accounting, Operation HQ) → HR. An office staffer with no clock-in on a work day is reminded too, and each head gets one summary bell naming only their people. Office staff have no roster, so HR's office work days tell a rest day from a missed day. The times are HR's rules on the Attendance Log (<code>AttendanceAlertRules</code>). A guard missing a rostered duty is a no-show, handled by <code>DetectNoShows</code>.</span></div>
+    <div><b>Nobody forgets quietly</b><span><code>SendAttendanceAlerts</code> runs every 5 minutes. Someone still clocked in after their shift is reminded first. If it's still open later, their head hears, following the owner's chain (<code>Heads::toTell</code>): a guard → Operation HQ and the region's Satellite; HR, Operation HQ and Accounting → the President or VP; a Satellite → Operation HQ; other office staff (Admin…) → HR. HR is copied, as timekeeper, on the office staff it doesn't head. An office staffer with no clock-in on a work day is reminded too, and each head gets one summary bell naming only their people. Office staff have no roster, so HR's office work days tell a rest day from a missed day. The times are HR's rules on the Attendance Log (<code>AttendanceAlertRules</code>). A guard missing a rostered duty is a no-show, handled by <code>DetectNoShows</code>.</span></div>
   </div>
   <details class="file" open><summary>app/Queries/Attendance/CurrentDutyQuery.php<span class="lines">80 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
@@ -13660,7 +13727,7 @@ flowchart TD
             }
 
             <span class="k">if</span> ($now-&gt;<span class="f">gte</span>($end-&gt;<span class="f">addMinutes</span>($rules[<span class="s">&#039;clock_out_escalate_minutes&#039;</span>])) &amp;&amp; $this-&gt;<span class="f">claim</span>(<span class="s">&#039;clock_out.escalated&#039;</span>, $log)) {
-                Notification::<span class="f">send</span>(Heads::<span class="f">of</span>($log-&gt;user, $log-&gt;dutyAssignment?-&gt;client), <span class="k">new</span> <span class="f">UpdateNotice</span>(<span class="s">&quot;Not clocked out: {$log-&gt;user-&gt;name}&quot;</span>,
+                Notification::<span class="f">send</span>(Heads::<span class="f">toTell</span>($log-&gt;user, $log-&gt;dutyAssignment?-&gt;client), <span class="k">new</span> <span class="f">UpdateNotice</span>(<span class="s">&quot;Not clocked out: {$log-&gt;user-&gt;name}&quot;</span>,
                     <span class="s">&quot;Shift ended at {$ended}; still clocked in since &quot;</span>.$log-&gt;clock_in_at?-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;. Check with them, then record the real time.&#039;</span>,
                     <span class="f">route</span>(<span class="s">&#039;attendance-log&#039;</span>, [<span class="s">&#039;show&#039;</span> =&gt; AttendanceLog::NOT_CLOCKED_OUT]), <span class="s">&#039;clock-alert&#039;</span>));
                 $escalated++;
@@ -13710,7 +13777,7 @@ flowchart TD
                     <span class="s">&#039;Your shift started at &#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;. Clock in on My Attendance, or file leave if you\&#039;re off today.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;attendance&#039;</span>), <span class="s">&#039;clock&#039;</span>);
                 $missing++;
 
-                <span class="k">foreach</span> (Heads::<span class="f">of</span>($user) <span class="k">as</span> $head) {
+                <span class="k">foreach</span> (Heads::<span class="f">toTell</span>($user) <span class="k">as</span> $head) {
                     $byHead[$head-&gt;id][<span class="s">&#039;head&#039;</span>] = $head;
                     $byHead[$head-&gt;id][<span class="s">&#039;names&#039;</span>][] = $user-&gt;name.<span class="s">&#039; (&#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;)&#039;</span>;
                 }
@@ -15283,7 +15350,8 @@ flowchart TD
     <span class="c">/**
      * Absences this audience covers: guards in the viewer&#039;s reach, or office staff (an account
      * with no HR profile counts as office staff): all of them for the President or VP and the
-     * Super Admin, else only those the viewer heads (Heads: HR, or Operation HQ for Satellites).
+     * Super Admin, every non-HR staffer for HR, else only those the viewer heads (Operation HQ:
+     * Satellites). Only the head approves (ApproveAway::canApprove).
      *
      * @return Builder&lt;AwayLog&gt;
      */</span>
@@ -15293,8 +15361,7 @@ flowchart TD
 
         <span class="k">return</span> AwayLog::<span class="f">query</span>()-&gt;<span class="f">whereHas</span>(<span class="s">&#039;user&#039;</span>, <span class="k">fn</span> (Builder $user) =&gt; <span class="k">match</span> (<span class="k">true</span>) {
             $this-&gt;scope !== <span class="s">&#039;office&#039;</span> =&gt; $user-&gt;<span class="f">visibleTo</span>($viewer)-&gt;<span class="f">whereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)),
-            Heads::<span class="f">seesAllOfficeStaff</span>($viewer) =&gt; $user-&gt;<span class="f">officeStaff</span>(),
-            <span class="k">default</span> =&gt; Heads::<span class="f">constrainOfficeStaffHeadedBy</span>($user, $viewer),
+            <span class="k">default</span> =&gt; Heads::<span class="f">constrainOfficeStaffSeenBy</span>($user, $viewer),
         });
     }
 
@@ -15985,7 +16052,7 @@ flowchart TD
         timer = <span class="f">setTimeout</span>(() =&gt; <span class="f">finish</span>(() =&gt; (best ? <span class="f">resolve</span>(best) : <span class="f">reject</span>(<span class="k">new</span> <span class="f">Error</span>(<span class="s">&#039;No GPS position yet. Step outside and try again.&#039;</span>)))), timeoutMs);
     });
 }</code></pre></details>
-  <div class="try"><b>Try it</b><ol><li>As <code>opshq@example.test</code>: Patrols → Checkpoints → Print QR stickers.</li><li>As a roving guard on duty: Scan checkpoint, then Leaving post → Appointment.</li><li>As <code>opshq@example.test</code>: Patrols → On duty now → Approve.</li><li>As <code>accounting@example.test</code>, clocked in: Stepping out of the office → Official business → Mark me out. As <code>executive@example.test</code>: Office Away → View location → Approve time away.</li></ol></div>
+  <div class="try"><b>Try it</b><ol><li>As <code>opshq@example.test</code>: Patrols → Checkpoints → Print QR stickers.</li><li>As a roving guard on duty: Scan checkpoint, then Leaving post → Appointment.</li><li>As <code>opshq@example.test</code>: Patrols → On duty now → Approve.</li><li>As <code>accounting@example.test</code>, clocked in: Stepping out of the office → Official business → Mark me out. As <code>president@example.test</code>: Office Away → View location → Approve time away.</li></ol></div>
 </section>
 <!-- ============================== 25 ============================== -->
 <section class="chapter" id="live-bell">
@@ -16569,7 +16636,7 @@ flowchart TD
     @endif
 &lt;/div&gt;
 @<span class="k">if</span> ($tone === <span class="s">&#039;hexagon&#039;</span>)&lt;/div&gt;@endif</code></pre></details>
-  <div class="try"><b>Try it</b><ol><li>As <code>executive@example.test</code>: Overview → Organization.</li><li>Open a region, then a client's guard count.</li></ol></div>
+  <div class="try"><b>Try it</b><ol><li>As <code>president@example.test</code>: Overview → Organization.</li><li>Open a region, then a client's guard count.</li></ol></div>
 </section>
 
 <!-- ============================== 27 ============================== -->
@@ -17971,7 +18038,7 @@ stateDiagram-v2
         }
 
         <span class="k">if</span> (<span class="f">in_array</span>(<span class="k">null</span>, $signers, <span class="k">true</span>)) {
-            $this-&gt;command-&gt;<span class="f">warn</span>(<span class="s">&#039;Operation HQ, Admin, HR, Accounting and the Executive each need an account: nothing seeded.&#039;</span>);
+            $this-&gt;command-&gt;<span class="f">warn</span>(<span class="s">&#039;Operation HQ, Admin, HR, Accounting and the President each need an account: nothing seeded.&#039;</span>);
 
             <span class="k">return</span>;
         }
@@ -18007,7 +18074,7 @@ stateDiagram-v2
         }
         <span class="k">if</span> ($resignation = $this-&gt;<span class="f">resign</span>(<span class="s">&#039;guard3@example.test&#039;</span>, $endOfSeptember, ResignationReason::Studies, <span class="s">&#039;I am going back to school this semester to finish my criminology degree.&#039;</span>, <span class="k">true</span>, <span class="n">1400</span>, $signers)) {
             $pay = <span class="f">app</span>(SubmitFinalPay::<span class="k">class</span>)-&gt;<span class="f">handle</span>(<span class="f">app</span>(PrepareFinalPay::<span class="k">class</span>)-&gt;<span class="f">handle</span>($resignation, $accounting), $accounting);
-            <span class="c">// In the signing order: Accounting, then the Executive (which releases it).</span>
+            <span class="c">// In the signing order: Accounting, then the President or VP (who releases it).</span>
             <span class="k">foreach</span> (FinalPay::SIGNERS <span class="k">as</span> $role) {
                 <span class="f">app</span>(SignFinalPay::<span class="k">class</span>)-&gt;<span class="f">handle</span>($pay, $signers[$role-&gt;value]);
             }
@@ -18071,7 +18138,7 @@ stateDiagram-v2
         $this-&gt;command-&gt;<span class="f">info</span>(<span class="s">&quot;{$resignation-&gt;user-&gt;name}: last day {$resignation-&gt;effectiveLastDay()-&gt;format(&#039;M j&#039;)}, {$stage}.&quot;</span>);
     }
 }</code></pre></details>
-  <div class="try"><b>Try it</b><ol><li>As <code>accounting@example.test</code>: Final Pay → open Ferdinand Ramos → <b>Sign as Accounting</b>. Then as <code>executive@example.test</code> → <b>Sign and release</b>; check the clearance and the bond balance.</li><li>As <code>accounting@example.test</code>: open Liza Pascual → Prepare final pay; open Marlon Mendoza → Send for signatures.</li><li>As <code>accounting@example.test</code>: Cash Bonds → <b>Enroll all guards</b>, then <b>Enter</b> what someone paid in before.</li><li>As <code>hr@example.test</code>: no Final Pay in the menu, and <code>/final-pay</code> is refused. HR's part is the resignation's clearance.</li></ol></div>
+  <div class="try"><b>Try it</b><ol><li>As <code>accounting@example.test</code>: Final Pay → open Ferdinand Ramos → <b>Sign as Accounting</b>. Then as <code>president@example.test</code> → <b>Sign and release</b>; check the clearance and the bond balance.</li><li>As <code>accounting@example.test</code>: open Liza Pascual → Prepare final pay; open Marlon Mendoza → Send for signatures.</li><li>As <code>accounting@example.test</code>: Cash Bonds → <b>Enroll all guards</b>, then <b>Enter</b> what someone paid in before.</li><li>As <code>hr@example.test</code>: no Final Pay in the menu, and <code>/final-pay</code> is refused. HR's part is the resignation's clearance.</li></ol></div>
 </section>
 
 <!-- ============================== 30 ============================== -->
@@ -19710,7 +19777,7 @@ flowchart LR
         <span class="k">return</span> $added;
     }
 }</code></pre></details>
-  <div class="try"><b>Try it</b><ol><li>As <code>accounting@example.test</code> (office staff): My Reimbursements → File a reimbursement → Transportation, ₱450, the purpose, a receipt photo → Send for approval.</li><li>As <code>executive@example.test</code>: Reimbursements (badge) → Open → the receipt → Approve.</li><li>Back as Accounting: Payroll → generate that person's payslip. The Reimbursement line is there, not taxed, and My Reimbursements says "Paid".</li></ol></div>
+  <div class="try"><b>Try it</b><ol><li>As <code>accounting@example.test</code> (office staff): My Reimbursements → File a reimbursement → Transportation, ₱450, the purpose, a receipt photo → Send for approval.</li><li>As <code>president@example.test</code>: Reimbursements (badge) → Open → the receipt → Approve.</li><li>Back as Accounting: Payroll → generate that person's payslip. The Reimbursement line is there, not taxed, and My Reimbursements says "Paid".</li></ol></div>
 </section>
 
 <!-- ============================== 34 ============================== -->
@@ -20612,6 +20679,7 @@ flowchart LR
     ['A guard\'s birthday is today. Who gets a bell?', ['Everyone in the company', 'HR, Operation HQ and the Satellite of the guard\'s region, unless the guard keeps it private', 'Only the guard', 'Only HR'], 1, 'SendBirthdayReminders: HR for everyone, Operations for guards (a Satellite its region). Never the age; nobody if birthday_private.'],
     ['A petty cash fund of ₱5,000 has ₱1,500 of expenses in a request still waiting for Accounting. What is the cash on hand?', ['₱5,000', '₱3,500', '₱1,500', '₱6,500'], 1, 'cashOnHand() = fund − expenses not yet replenished, which includes those in a pending request. Only a released request brings the cash back.'],
     ['A referred hire leaves 60 days in; the terms say 90. What happens on the referrer\'s next payslip after the due date?', ['The bonus is paid anyway', 'No bonus: the referral is closed and the referrer told', 'Half the bonus', 'HR decides by hand'], 1, 'PayDueReferralBonuses checks Referral::hireStayed(): still working, or a last day on or after the due date. Otherwise Forfeited.'],
+    ['The Accounting clerk files overtime. Who decides it, and what does HR see?', ['HR decides it', 'The President or VP decide it; HR sees it, view only', 'Operation HQ decides it', 'Nobody: office staff can\'t file overtime'], 1, 'Heads: Accounting (like HR and Operation HQ) answers to the President or VP. HR sees every non-HR staffer\'s requests (constrainOfficeStaffSeenBy) but canDecideFor says no, so the row shows "View only".'],
     ['A Satellite Operation files leave. Who decides it?', ['HR, after Operation HQ endorses it', 'Operation HQ, their head, outright', 'The President or VP', 'Their own region\'s Satellite'], 1, 'Heads: a Satellite\'s head is Operation HQ. LeaveRouting starts it at stage hq, and for office staff that stage decides (EndorseLeaveRequest skips office staff). HR still reads it; the President or VP monitor it.'],
     ['An Accounting clerk is still clocked in two hours after their shift ended. Who has been told?', ['Nobody: it only shows on the Attendance Log', 'The clerk (after 30 min), then HR, their head (after 2 hours)', 'Operation HQ', 'The President or VP'], 1, 'SendAttendanceAlerts reminds the employee first, then their head: HR for office staff like Accounting, the President or VP for HR, Operation HQ for a Satellite, both Operations for a guard. The minutes are HR\'s Alert rules.'],
     ['On Roles & Access, can one person be both HR and Admin?', ['Yes, tick both', 'No: one role per person; Employee is automatic for anyone with an employee record', 'Only the Super Admin can', 'Yes, if they are office staff'], 1, 'The picker is radio buttons (one job role). Access per role (Ability::roles()) didn\'t change; only the picker did.'],

@@ -74,7 +74,7 @@ final class SendAttendanceAlerts
             }
 
             if ($now->gte($end->addMinutes($rules['clock_out_escalate_minutes'])) && $this->claim('clock_out.escalated', $log)) {
-                Notification::send(Heads::of($log->user, $log->dutyAssignment?->client), new UpdateNotice("Not clocked out: {$log->user->name}",
+                Notification::send(Heads::toTell($log->user, $log->dutyAssignment?->client), new UpdateNotice("Not clocked out: {$log->user->name}",
                     "Shift ended at {$ended}; still clocked in since ".$log->clock_in_at?->format('g:i A').'. Check with them, then record the real time.',
                     route('attendance-log', ['show' => AttendanceLog::NOT_CLOCKED_OUT]), 'clock-alert'));
                 $escalated++;
@@ -124,7 +124,7 @@ final class SendAttendanceAlerts
                     'Your shift started at '.$start->format('g:i A').'. Clock in on My Attendance, or file leave if you\'re off today.', route('attendance'), 'clock');
                 $missing++;
 
-                foreach (Heads::of($user) as $head) {
+                foreach (Heads::toTell($user) as $head) {
                     $byHead[$head->id]['head'] = $head;
                     $byHead[$head->id]['names'][] = $user->name.' ('.$start->format('g:i A').')';
                 }

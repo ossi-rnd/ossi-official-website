@@ -32,7 +32,7 @@ beforeEach(function () {
     app(RecordPunch::class)->handle($this->accountant, PunchType::ClockIn, cameraPhoto(), OFFICE_LAT, OFFICE_LNG, 10);
     $this->executive = staff(Role::President);
     $this->opsHq = staff(Role::OperationsHq);
-    // The accountant's head (App\Support\Heads): HR.
+    // The accountant's head (App\Support\Heads): the President or VP. HR monitors.
     $this->hr = staff(Role::Hr);
 });
 
@@ -99,29 +99,29 @@ it('lets office staff log a client site visit (3 hours, with a note), not guards
         ->and($away->reason->label())->toBe('Client site visit');
 });
 
-it('is approved by their head (HR for an accountant), watched by the President or VP, not Operations', function () {
+it('is approved by their head (the President or VP for an accountant), watched by HR, not Operations', function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-12 10:00'));
     $away = app(LeavePost::class)->handle($this->accountant, AwayReason::OfficialBusiness, 'BIR Pasig, filing 1601-C', OFFICE_LAT, OFFICE_LNG);
 
-    // The President or VP sees everyone's (they monitor) but approves only HR staff's.
-    Livewire::actingAs($this->executive)->test(AwayMonitor::class)
-        ->assertSee('Office staff out of the office')
-        ->assertSee('Patricia Accountant')
-        ->call('viewAway', $away->id)
-        ->assertSee('OSSI Head Office');
-    expect(fn () => app(ApproveAway::class)->handle($away, $this->executive))->toThrow(AuthorizationException::class);
+    // HR sees it (they monitor, as timekeeper) but doesn't approve it.
+    Livewire::actingAs($this->hr)->test(AwayMonitor::class)->assertSee('Patricia Accountant');
+    expect(fn () => app(ApproveAway::class)->handle($away, $this->hr))->toThrow(AuthorizationException::class);
 
     // Operation HQ's Office Away lists only the Satellites it heads; Patrols, guards only.
     Livewire::actingAs($this->opsHq)->test(AwayMonitor::class, ['scope' => 'field'])->assertDontSee('Patricia Accountant');
     Livewire::actingAs($this->opsHq)->test(AwayMonitor::class)->assertDontSee('Patricia Accountant');
     expect(fn () => app(ApproveAway::class)->handle($away, $this->opsHq))->toThrow(AuthorizationException::class);
 
-    Livewire::actingAs($this->hr)->test(AwayMonitor::class)->assertSee('Patricia Accountant');
-    app(ApproveAway::class)->handle($away, $this->hr);
-    expect($away->fresh()?->approved_by)->toBe($this->hr->id);
+    Livewire::actingAs($this->executive)->test(AwayMonitor::class)
+        ->assertSee('Office staff out of the office')
+        ->assertSee('Patricia Accountant')
+        ->call('viewAway', $away->id)
+        ->assertSee('OSSI Head Office');
+    app(ApproveAway::class)->handle($away, $this->executive);
+    expect($away->fresh()?->approved_by)->toBe($this->executive->id);
 });
 
-it('alerts their head (HR), not Operations, when office staff go silent or are well past their time', function () {
+it('alerts their head (the President or VP for an accountant), not Operations, when office staff go silent or are well past their time', function () {
     Notification::fake();
     $this->travelTo(CarbonImmutable::parse('2026-10-12 10:00'));
     // Official business is usually two hours: back by 12:00, and 40 minutes out is nothing unusual.
@@ -129,14 +129,14 @@ it('alerts their head (HR), not Operations, when office staff go silent or are w
 
     $this->travelTo(CarbonImmutable::parse('2026-10-12 10:40'));
     app(SendPatrolAlerts::class)->handle(CarbonImmutable::now());
-    Notification::assertSentTo($this->hr, PatrolAlert::class, fn (PatrolAlert $alert) => str_contains($alert->headline, 'No location shared for 40 min') && $alert->url === route('office-away'));
-    Notification::assertNotSentTo($this->hr, PatrolAlert::class, fn (PatrolAlert $alert) => str_contains($alert->headline, 'Not back yet'));
+    Notification::assertSentTo($this->executive, PatrolAlert::class, fn (PatrolAlert $alert) => str_contains($alert->headline, 'No location shared for 40 min') && $alert->url === route('office-away'));
+    Notification::assertNotSentTo($this->executive, PatrolAlert::class, fn (PatrolAlert $alert) => str_contains($alert->headline, 'Not back yet'));
 
     $this->travelTo(CarbonImmutable::parse('2026-10-12 13:00'));
     app(UpdateAwayLocation::class)->handle($this->accountant, 14.5880, 121.0570, 10);
     app(SendPatrolAlerts::class)->handle(CarbonImmutable::now());
-    Notification::assertSentTo($this->hr, PatrolAlert::class, fn (PatrolAlert $alert) => str_contains($alert->headline, 'Not back yet: 60 min past 12:00 PM') && str_contains($alert->detail, 'Away from the office'));
-    Notification::assertNotSentTo([$this->opsHq, $this->executive], PatrolAlert::class);
+    Notification::assertSentTo($this->executive, PatrolAlert::class, fn (PatrolAlert $alert) => str_contains($alert->headline, 'Not back yet: 60 min past 12:00 PM') && str_contains($alert->detail, 'Away from the office'));
+    Notification::assertNotSentTo([$this->opsHq, $this->hr], PatrolAlert::class);
 });
 
 it('sorts who is out into status tabs, needing attention first, and filters by reason and name', function () {

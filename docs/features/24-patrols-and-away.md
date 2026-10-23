@@ -101,7 +101,7 @@ The client's **Today** view shows the same: **Away · Appointment** (since, back
 
 ## 3. Office staff stepping out (their head monitors)
 
-Office staff do the same thing, in office words, and **their head** watches it (`App\Support\Heads`): HR for Admin, Accounting and Operation HQ; Operation HQ for a Satellite; the President or VP for HR. The President or VP also see everyone's:
+Office staff do the same thing, in office words, and **their head** watches it (`App\Support\Heads`): HR for Admin and others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ and Accounting. HR also sees every non-HR staffer's (view only, no Approve). The President or VP also see everyone's:
 
 - My Attendance → **Stepping out of the office** → why → how long → a note → **Mark me out**. The office reasons, all needing a note (the hours are the fallback only, never shown):
 
@@ -197,4 +197,4 @@ Tests: `tests/Feature/Attendance/PatrolsTest.php` and `OfficeAwayTest.php` (offi
 1. As `opshq@example.test`: Patrols → Checkpoints → BGC Tower One or Makati CBD → **Print QR stickers**.
 2. As a roving guard on duty now (Duty Roster: a "Roving" post, Type of duty **Roving patrol**), on a phone: My Attendance → **Scan checkpoint** → point at a printed sticker.
 3. Same guard: **Leaving post** → Appointment → How long: 30 min → "Dentist at Glorietta" → **Mark me away**. Then **Need more time?** → +30 min → "Long queue" → **Add time**. As `opshq@example.test`: Patrols shows them away with the new "back by", the timeline shows why, and **Approve**.
-4. As `accounting@example.test`, clocked in: **Stepping out of the office** → Official business (usually 2 hrs) → "BDO Ortigas, depositing payroll" → **Mark me out** → **Update my location**. As `executive@example.test` (the President): **Office Away** → **View location** → **Approve time away**.
+4. As `accounting@example.test`, clocked in: **Stepping out of the office** → Official business (usually 2 hrs) → "BDO Ortigas, depositing payroll" → **Mark me out** → **Update my location**. As `president@example.test` (Accounting's head): **Office Away** → **View location** → **Approve time away**.

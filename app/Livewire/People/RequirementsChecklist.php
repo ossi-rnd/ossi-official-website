@@ -27,6 +27,7 @@ use Livewire\WithFileUploads;
  * @property-read EmployeeProfile $profile
  * @property-read list<RequirementItem> $items
  * @property-read list<RequirementItem> $visibleItems
+ * @property-read int $openCount
  * @property-read array{total: int, on_file: int, submitted: int, expired: int} $summary
  * @property-read bool $canReview
  * @property-read RequirementItem|null $activeItem
@@ -87,6 +88,22 @@ class RequirementsChecklist extends Component
         return $this->onlyOpen
             ? array_values(array_filter($this->items, fn (RequirementItem $item) => $item->needsAction()))
             : $this->items;
+    }
+
+    /** Documents still missing, waiting for HR's check, or expired. */
+    #[Computed]
+    public function openCount(): int
+    {
+        return count(array_filter($this->items, fn (RequirementItem $item) => $item->needsAction()));
+    }
+
+    /**
+     * The "Only what needs action" filter is offered only when it would change the list: some
+     * documents are done and some aren't (or it's already on, so it can be turned off).
+     */
+    public function offersFilter(): bool
+    {
+        return $this->onlyOpen || ($this->openCount > 0 && $this->openCount < count($this->items));
     }
 
     /**

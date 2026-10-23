@@ -13,14 +13,15 @@ use Illuminate\Database\Eloquent\Collection;
  * The owner's chain of heads (2026-10-23): who supervises whom, in one place.
  *
  *   a guard                                         Operations: Operation HQ, and the Satellite of their client's region
- *   HR                                              the President or Vice President
+ *   HR, Operation HQ, Accounting                    the President or Vice President
  *   a Satellite Operation                           Operation HQ
- *   other office staff (Admin, Accounting,
- *   Operation HQ, Developer, staff with no role)    HR
+ *   other office staff (Admin, Developer,
+ *   staff with no role)                             HR
  *
  * Used for attendance alerts, deciding office staff's leave and overtime, watching their
- * time away, and Notices to Explain / merits. The Super Admin may act for any head (backup),
- * and the President or Vice President still SEE every office staffer's requests (they monitor).
+ * time away, and Notices to Explain / merits. The Super Admin may act for any head (backup).
+ * The President or Vice President SEE every office staffer's requests, and HR every non-HR
+ * office staffer's (they monitor; HR also gets their attendance alerts, as timekeeper).
  */
 final class Heads
 {
@@ -39,7 +40,7 @@ final class Heads
 
         return match (true) {
             $person->employeeProfile !== null && ! $person->employeeProfile->is_office_staff => self::OPERATIONS,
-            $person->hasRole(Role::Hr) => self::LEADERSHIP,
+            $person->hasAnyRole(...self::underLeadership()) => self::LEADERSHIP,
             $person->hasRole(Role::SatelliteOperations) => self::OPERATIONS_HQ,
             default => self::HR,
         };
@@ -80,6 +81,37 @@ final class Heads
         return $heads->reject(fn (User $head) => $head->is($person))->values();
     }
 
+    /**
+     * HR, kept informed (as timekeeper) about office staff it doesn't head: Operation HQ,
+     * Accounting and the Satellites. Never about HR staff.
+     *
+     * @return Collection<int, User>
+     */
+    public static function informed(User $person): Collection
+    {
+        if (self::isTopOfChain($person) || $person->hasRole(Role::Hr) || ! in_array(self::groupOf($person), [self::LEADERSHIP, self::OPERATIONS_HQ], true)) {
+            return new Collection;
+        }
+
+        return User::query()->notifiable([Role::Hr])->get()->reject(fn (User $hr) => $hr->is($person))->values();
+    }
+
+    /**
+     * Everyone to tell about this person: their heads, then HR when it's only informed.
+     *
+     * @return Collection<int, User>
+     */
+    public static function toTell(User $person, ?Client $client = null): Collection
+    {
+        return self::of($person, $client)->merge(self::informed($person))->unique('id')->values();
+    }
+
+    /** @return list<Role> office roles the President or VP head directly */
+    public static function underLeadership(): array
+    {
+        return [Role::Hr, Role::OperationsHq, Role::Accounting];
+    }
+
     /** Whether $head heads $person (and so may decide for them). The Super Admin may, as backup. */
     public static function isHeadOf(User $head, User $person): bool
     {
@@ -101,7 +133,8 @@ final class Heads
 
     /**
      * Narrows a query of users to the OFFICE staff this viewer heads: HR → office staff who aren't
-     * HR or a Satellite; Operation HQ → Satellites; the President or VP → HR; Super Admin → all.
+     * HR, Operation HQ, Accounting or a Satellite; Operation HQ → Satellites; the President or VP →
+     * HR, Operation HQ and Accounting; Super Admin → all.
      *
      * @param  Builder<User>  $users
      */
@@ -112,10 +145,25 @@ final class Heads
 
         match (true) {
             $viewer->hasRole(Role::SuperAdmin) => null,
-            $viewer->hasAnyRole(...Role::leadership()) => $users->whereHas('roles', $role(Role::Hr)),
+            $viewer->hasAnyRole(...Role::leadership()) => $users->whereHas('roles', $role(...self::underLeadership())),
             $viewer->hasRole(Role::OperationsHq) => $users->whereHas('roles', $role(Role::SatelliteOperations)),
-            $viewer->hasRole(Role::Hr) => $users->whereDoesntHave('roles', $role(Role::Hr, Role::SatelliteOperations)),
+            $viewer->hasRole(Role::Hr) => $users->whereDoesntHave('roles', $role(Role::SatelliteOperations, ...self::underLeadership())),
             default => $users->whereRaw('1 = 0'),
+        };
+    }
+
+    /**
+     * Narrows a query of users to the OFFICE staff whose requests and time away this viewer sees:
+     * the ones they head, plus, for HR, every non-HR office staffer (monitor only).
+     *
+     * @param  Builder<User>  $users
+     */
+    public static function constrainOfficeStaffSeenBy(Builder $users, User $viewer): void
+    {
+        match (true) {
+            self::seesAllOfficeStaff($viewer) => $users->officeStaff(),
+            $viewer->hasRole(Role::Hr) => $users->officeStaff()->whereDoesntHave('roles', fn (Builder $userRoles) => $userRoles->where('role', Role::Hr->value)),
+            default => self::constrainOfficeStaffHeadedBy($users, $viewer),
         };
     }
 

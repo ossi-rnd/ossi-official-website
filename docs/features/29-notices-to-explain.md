@@ -35,7 +35,8 @@ stateDiagram-v2
 |---|---|---|
 | A guard | Operation HQ, or their region's Satellite Operation | HR, the President or Vice President |
 | A Satellite Operation | Operation HQ (their head, `App\Support\Heads`) | HR, the President or Vice President |
-| Other office staff | HR | the President or Vice President |
+| Operation HQ, Accounting | the President or Vice President | HR |
+| Other office staff (Admin…) | HR | the President or Vice President |
 | HR staff | the President or Vice President | (other HR staff don't) |
 | Anyone | Super Admin. Never yourself. | |
 

@@ -40,6 +40,7 @@ beforeEach(function () {
     $this->satellite->forceFill(['operations_region' => Region::Ncr])->save();
     $this->executive = staff(Role::President);
     $this->accountant = staff(Role::Accounting);
+    $this->adminStaff = staff(Role::Admin);
 
     $this->uniform = MeritType::query()->where('name', 'Out of uniform')->sole();
     $this->commended = MeritType::query()->where('name', 'Commended by the client')->sole();
@@ -50,8 +51,10 @@ it('is given by whoever supervises the person', function () {
         ->and(MeritRecord::canGive($this->satellite, $this->guard))->toBeTrue()
         ->and(MeritRecord::canGive($this->satellite, $this->cavite))->toBeFalse() // another region
         ->and(MeritRecord::canGive($this->hr, $this->guard))->toBeTrue()
-        ->and(MeritRecord::canGive($this->hr, $this->accountant))->toBeTrue()
-        ->and(MeritRecord::canGive($this->opsHq, $this->accountant))->toBeFalse() // office staff: HR
+        ->and(MeritRecord::canGive($this->hr, $this->adminStaff))->toBeTrue() // Admin: HR
+        ->and(MeritRecord::canGive($this->hr, $this->accountant))->toBeFalse() // Accounting: the President or VP
+        ->and(MeritRecord::canGive($this->executive, $this->accountant))->toBeTrue()
+        ->and(MeritRecord::canGive($this->opsHq, $this->accountant))->toBeFalse()
         ->and(MeritRecord::canGive($this->hr, $this->otherHr))->toBeFalse() // HR staff: the Executive
         ->and(MeritRecord::canGive($this->executive, $this->otherHr))->toBeTrue()
         ->and(MeritRecord::canGive($this->accountant, $this->guard))->toBeFalse()
@@ -133,7 +136,7 @@ it('picks people by name or employee number, and suggests some before anything i
 });
 
 it('works from the pages, and each viewer sees only their people', function () {
-    app(GiveMerit::class)->handle($this->hr, $this->accountant, $this->commended, 'Closed the books early.', CarbonImmutable::today());
+    app(GiveMerit::class)->handle($this->executive, $this->accountant, $this->commended, 'Closed the books early.', CarbonImmutable::today());
 
     Livewire::actingAs($this->opsHq)->test(Merits::class, ['giveTo' => $this->guard->id])
         ->assertSet('giving', true)

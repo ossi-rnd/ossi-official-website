@@ -17,8 +17,8 @@ use InvalidArgumentException;
 /**
  * Who decides depends on who's asking: HR decides guards' leave (final),
  * once the region's Satellite Operation and Operation HQ have endorsed it
- * (EndorseLeaveRequest); an office staffer's head decides theirs (Heads: HR for Admin,
- * Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR).
+ * (EndorseLeaveRequest); an office staffer's head decides theirs (Heads: HR for Admin and
+ * others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ, Accounting).
  */
 final class ReviewLeaveRequest
 {

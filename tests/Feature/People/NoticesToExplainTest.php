@@ -41,6 +41,7 @@ beforeEach(function () {
     $this->otherHr = staff(Role::Hr);
     $this->executive = staff(Role::President);
     $this->accountant = staff(Role::Accounting);
+    $this->adminStaff = staff(Role::Admin);
 });
 
 function issued(object $test, ?CarbonImmutable $explainBy = null): NoticeToExplain
@@ -57,12 +58,14 @@ function issued(object $test, ?CarbonImmutable $explainBy = null): NoticeToExpla
     );
 }
 
-it('is issued by whoever supervises the person: Operations for guards, HR for office staff, the Executive for HR staff', function () {
+it('is issued by whoever supervises the person: Operations for guards, HR for Admin, the President or VP for HR and Accounting', function () {
     expect(NoticeToExplain::canIssue($this->opsHq, $this->guard))->toBeTrue()
         ->and(NoticeToExplain::canIssue($this->satellite, $this->guard))->toBeTrue()
         ->and(NoticeToExplain::canIssue($this->satellite, $this->cavite))->toBeFalse()
         ->and(NoticeToExplain::canIssue($this->hr, $this->guard))->toBeFalse() // guards: Operations
-        ->and(NoticeToExplain::canIssue($this->hr, $this->accountant))->toBeTrue()
+        ->and(NoticeToExplain::canIssue($this->hr, $this->adminStaff))->toBeTrue()
+        ->and(NoticeToExplain::canIssue($this->hr, $this->accountant))->toBeFalse()
+        ->and(NoticeToExplain::canIssue($this->executive, $this->accountant))->toBeTrue()
         ->and(NoticeToExplain::canIssue($this->hr, $this->otherHr))->toBeFalse()
         ->and(NoticeToExplain::canIssue($this->executive, $this->otherHr))->toBeTrue()
         ->and(NoticeToExplain::canIssue($this->accountant, $this->guard))->toBeFalse();
@@ -129,10 +132,10 @@ it('decides a suspension with its days, can add a demerit, and tells HR of a dis
     expect($decided->fresh()?->decision_acknowledged_at)->not->toBeNull();
 
     // A dismissal: HR is told to update the record.
-    $second = app(IssueNoticeToExplain::class)->handle($this->hr, $this->accountant, 'Falsified receipts', CarbonImmutable::today(), 'Submitted three receipts on Oct 10 that the supplier says it never issued.', 'Code of Conduct, Section 9: Dishonesty.', NteOutcome::Dismissal, CarbonImmutable::parse('2026-10-21'));
+    $second = app(IssueNoticeToExplain::class)->handle($this->executive, $this->accountant, 'Falsified receipts', CarbonImmutable::today(), 'Submitted three receipts on Oct 10 that the supplier says it never issued.', 'Code of Conduct, Section 9: Dishonesty.', NteOutcome::Dismissal, CarbonImmutable::parse('2026-10-21'));
     $this->travelTo(CarbonImmutable::parse('2026-10-22 09:00'));
-    app(DecideNotice::class)->handle($this->hr, $second, NteOutcome::Dismissal, 'No explanation given; the supplier confirmed in writing that the receipts are false.');
-    Notification::assertSentTo($this->otherHr, NoticeToExplainNotice::class, fn (NoticeToExplainNotice $n) => $n->event === NoticeToExplainNotice::DISMISSAL_HR);
+    app(DecideNotice::class)->handle($this->executive, $second, NteOutcome::Dismissal, 'No explanation given; the supplier confirmed in writing that the receipts are false.');
+    Notification::assertSentTo([$this->hr, $this->otherHr], NoticeToExplainNotice::class, fn (NoticeToExplainNotice $n) => $n->event === NoticeToExplainNotice::DISMISSAL_HR);
 });
 
 it('works from the pages: issued by Operations, explained by the guard on My Notices', function () {

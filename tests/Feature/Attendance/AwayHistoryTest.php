@@ -75,11 +75,11 @@ it('alerts the supervisor when time away was never ended', function () {
 
     app(CloseForgottenAways::class)->handle(CarbonImmutable::now());
 
-    // Office staff: their head (App\Support\Heads), as for their other time-away alerts. An accountant's is HR.
-    Notification::assertSentTo($this->hr, PatrolAlert::class, fn (PatrolAlert $alert) => $alert->headline === 'Time away never ended (Official business)'
+    // Office staff: their head (App\Support\Heads), as for their other time-away alerts. An accountant's is the President or VP.
+    Notification::assertSentTo($this->executive, PatrolAlert::class, fn (PatrolAlert $alert) => $alert->headline === 'Time away never ended (Official business)'
         && str_contains($alert->detail, 'never tapped "Back" or clocked out')
         && $alert->url === route('office-away'));
-    Notification::assertNotSentTo([$this->accountant, $this->executive], PatrolAlert::class);
+    Notification::assertNotSentTo([$this->accountant, $this->hr], PatrolAlert::class);
 });
 
 it('closes an absence left open from an earlier duty at the next clock-in, even without the scheduler', function () {

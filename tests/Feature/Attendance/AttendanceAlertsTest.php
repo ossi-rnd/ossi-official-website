@@ -19,7 +19,8 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
 // Missed clock-outs (the employee, then their head) and office staff who haven't clocked in
-// (the employee, then one summary to the President or VP). Rules: HR, in the app.
+// (the employee, then one summary to each head; HR is also told about office staff it doesn't
+// head, as timekeeper). Rules: HR, in the app.
 
 beforeEach(function () {
     Notification::fake();
@@ -62,25 +63,29 @@ it('reminds a guard who forgot to clock out, then tells Operations of their regi
     expect(app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 20:00'))['escalated'])->toBe(0);
 });
 
-it('tells each office staffer\'s own head about a missed clock-out: HR, the President or VP, Operation HQ', function () {
+it('tells each office staffer\'s own head about a missed clock-out, and HR as timekeeper', function () {
     $hr = staff(Role::Hr);
     $clerk = staff(Role::Accounting);
+    $admin = staff(Role::Admin);
     $headOfOperations = staff(Role::OperationsHq);
-    foreach ([$hr, $clerk, $this->ncrSatellite, $headOfOperations] as $person) {
+    foreach ([$hr, $clerk, $admin, $this->ncrSatellite, $headOfOperations] as $person) {
         alertOpenLog($person, $this->shift, '2026-10-22', '08:02');
     }
 
     app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 19:30'));
 
-    // Accounting (and Operation HQ) → HR.
-    Notification::assertSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$clerk->name}"));
-    Notification::assertSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$headOfOperations->name}"));
-    Notification::assertNotSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$clerk->name}"));
+    // Accounting and Operation HQ → the President or VP; HR is told too (informed).
+    foreach ([$clerk, $headOfOperations] as $person) {
+        Notification::assertSentTo([$this->president, $hr], UpdateNotice::class, titled("Not clocked out: {$person->name}"));
+    }
+    // Admin → HR only.
+    Notification::assertSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$admin->name}"));
+    Notification::assertNotSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$admin->name}"));
     // HR → the President or VP.
     Notification::assertSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$hr->name}"));
-    // A Satellite → Operation HQ, not HR.
-    Notification::assertSentTo($this->hq, UpdateNotice::class, titled("Not clocked out: {$this->ncrSatellite->name}"));
-    Notification::assertNotSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$this->ncrSatellite->name}"));
+    // A Satellite → Operation HQ; HR informed; not the President or VP.
+    Notification::assertSentTo([$this->hq, $hr], UpdateNotice::class, titled("Not clocked out: {$this->ncrSatellite->name}"));
+    Notification::assertNotSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$this->ncrSatellite->name}"));
 });
 
 it('reminds office staff who haven\'t clocked in, with one summary to each head', function () {
@@ -104,10 +109,12 @@ it('reminds office staff who haven\'t clocked in, with one summary to each head'
     Notification::assertSentTo([$late, $alsoLate, $lateHr], UpdateNotice::class, titled('You haven\'t clocked in today'));
     Notification::assertNotSentTo([$onLeave, $in], UpdateNotice::class);
 
-    // HR hears about Accounting and Admin in one bell; the President or VP only about HR.
+    // HR hears about Admin (theirs) and Accounting (informed) in one bell; the President or VP
+    // about Accounting and HR, never Admin.
     Notification::assertSentToTimes($hrHead, UpdateNotice::class, 1);
     Notification::assertSentTo($hrHead, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === '2 not clocked in yet' && ! str_contains($notice->body, $lateHr->name));
-    Notification::assertSentTo($this->president, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === '1 not clocked in yet' && str_contains($notice->body, $lateHr->name));
+    Notification::assertSentTo($this->president, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === '2 not clocked in yet'
+        && str_contains($notice->body, $lateHr->name) && str_contains($notice->body, $late->name) && ! str_contains($notice->body, $alsoLate->name));
 
     // Not again the same day.
     expect(app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 10:00'))['officeMissing'])->toBe(0);

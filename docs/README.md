@@ -24,7 +24,8 @@ Open https://ossi_official_site.test.
 | hr@example.test | HR | My Attendance |
 | accounting@example.test | Accounting | My Attendance |
 | developer@example.test | Developer | My Attendance |
-| executive@example.test | Executive (office staff, Executive position) | Dashboard |
+| president@example.test | President (no employee record) | Dashboard |
+| vp@example.test | Vice President (no employee record) | Dashboard |
 | opshq@example.test | Operation HQ (Operations Head) | Dashboard |
 | satellite@example.test | Satellite Operation (Satellite Operations Officer); demo region Region IV-A, any region can be set on Roles & Access | Dashboard |
 | employee@example.test | Employee (Maria Santos) | My Attendance |

@@ -19,8 +19,8 @@ use Illuminate\Support\Facades\Notification;
 
 it('tells the employee their leave was approved, with the reviewer\'s note', function () {
     Notification::fake();
-    $clerk = staff(Role::Accounting);
-    // An accountant's head, who decides their leave (App\Support\Heads).
+    $clerk = staff(Role::Admin);
+    // An Admin staffer's head, who decides their leave (App\Support\Heads).
     $hr = staff(Role::Hr);
     $leave = new LeaveRequest(['type' => 'vacation', 'start_date' => today()->addDays(3), 'end_date' => today()->addDays(4), 'reason' => 'Family trip']);
     $leave->user()->associate($clerk);

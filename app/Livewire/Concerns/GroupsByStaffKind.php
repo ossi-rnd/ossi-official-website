@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Concerns;
 
+use App\Enums\Role;
 use App\Models\LeaveRequest;
 use App\Models\OvertimeRequest;
 use App\Models\User;
@@ -48,16 +49,23 @@ trait GroupsByStaffKind
     }
 
     /**
-     * The small hint after a tab's name, for this viewer: the President or VP decide only HR staff's
-     * and watch the rest; HR and Operation HQ decide the office staff they head.
+     * The small hint after a tab's name, for this viewer: the President or VP decide HR, Operation
+     * HQ and Accounting staff's and watch the rest; HR decides Admin's and others', and watches the
+     * rest; Operation HQ decides the Satellites'.
      */
     public function groupHint(string $group): string
     {
-        if (Heads::seesAllOfficeStaff($this->currentUser())) {
-            return $group === 'office' ? 'HR staff\'s are yours to decide' : 'monitor only';
+        $viewer = $this->currentUser();
+
+        if (Heads::seesAllOfficeStaff($viewer)) {
+            return $group === 'office' ? ($viewer->hasRole(Role::SuperAdmin) ? 'yours to decide (backup)' : 'HR, Operation HQ and Accounting staff\'s are yours to decide') : 'monitor only';
         }
 
-        return $group === 'office' ? 'yours to decide' : '';
+        if ($group !== 'office') {
+            return '';
+        }
+
+        return $viewer->hasRole(Role::Hr) ? 'Admin and other staff\'s are yours to decide' : 'yours to decide';
     }
 
     public function updatedGroup(): void

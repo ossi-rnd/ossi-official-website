@@ -48,7 +48,7 @@ class FinalPaySampleSeeder extends Seeder
         }
 
         if (in_array(null, $signers, true)) {
-            $this->command->warn('Operation HQ, Admin, HR, Accounting and the Executive each need an account: nothing seeded.');
+            $this->command->warn('Operation HQ, Admin, HR, Accounting and the President each need an account: nothing seeded.');
 
             return;
         }
@@ -84,7 +84,7 @@ class FinalPaySampleSeeder extends Seeder
         }
         if ($resignation = $this->resign('guard3@example.test', $endOfSeptember, ResignationReason::Studies, 'I am going back to school this semester to finish my criminology degree.', true, 1400, $signers)) {
             $pay = app(SubmitFinalPay::class)->handle(app(PrepareFinalPay::class)->handle($resignation, $accounting), $accounting);
-            // In the signing order: Accounting, then the Executive (which releases it).
+            // In the signing order: Accounting, then the President or VP (who releases it).
             foreach (FinalPay::SIGNERS as $role) {
                 app(SignFinalPay::class)->handle($pay, $signers[$role->value]);
             }

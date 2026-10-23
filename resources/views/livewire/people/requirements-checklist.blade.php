@@ -6,9 +6,11 @@
 <div>
     <x-ui.card title="201 file"
         :description="$summary['on_file'].' of '.$summary['total'].' documents on file'.($this->profile->is_office_staff ? ' (office staff: guard-only documents are not required)' : '')">
-        <x-slot:actions>
-            <x-ui.checkbox id="requirements-only-open" label="Only what needs action" wire:model.live="onlyOpen" />
-        </x-slot:actions>
+        @if ($this->offersFilter())
+            <x-slot:actions>
+                <x-ui.checkbox id="requirements-only-open" :label="'Only what needs action ('.$this->openCount.' of '.$summary['total'].')'" wire:model.live="onlyOpen" />
+            </x-slot:actions>
+        @endif
 
         <div class="space-y-3 border-b border-gray-100 px-4 py-3 dark:border-gray-800">
             <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $percent }}" aria-label="201 file completion">

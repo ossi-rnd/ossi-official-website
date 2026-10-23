@@ -12,11 +12,11 @@ use Illuminate\Database\Eloquent\Model;
  * A request (leave, overtime) that goes to different reviewers depending on who files it.
  *
  *   a guard's          the field gate (reviewAbilities()['field']): HR / Operations
- *   office staff's     their head (App\Support\Heads, the owner's chain): HR for Admin, Accounting,
- *                      Operation HQ…; Operation HQ for a Satellite; the President or VP for HR
+ *   office staff's     their head (App\Support\Heads, the owner's chain): HR for Admin and others;
+ *                      Operation HQ for a Satellite; the President or VP for HR, Operation HQ, Accounting
  *
- * Office staff's requests are seen by their head, and by the President or VP and the Super
- * Admin, who monitor them all. Everyone who monitors sees the guards'.
+ * Office staff's requests are seen by their head, by HR (every non-HR staffer's), and by the
+ * President or VP and the Super Admin, who monitor them all. Everyone who monitors sees the guards'.
  *
  * @phpstan-require-extends Model
  */
@@ -43,7 +43,7 @@ trait RoutedByStaffKind
 
     /**
      * The requests this viewer may see in the list: within their region; office staff's only
-     * for their head, and for the President or VP and the Super Admin (who monitor).
+     * for their head, HR, and the President or VP and the Super Admin (who monitor).
      *
      * @param  Builder<static>  $query
      */
@@ -53,7 +53,7 @@ trait RoutedByStaffKind
 
         if (! Heads::seesAllOfficeStaff($viewer)) {
             $query->whereHas('user', fn (Builder $user) => $user->where(fn (Builder $who) => $who->fieldStaff()
-                ->orWhere(fn (Builder $office) => Heads::constrainOfficeStaffHeadedBy($office, $viewer))));
+                ->orWhere(fn (Builder $office) => Heads::constrainOfficeStaffSeenBy($office, $viewer))));
         }
     }
 

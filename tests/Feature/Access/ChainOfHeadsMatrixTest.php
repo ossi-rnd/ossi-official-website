@@ -19,8 +19,9 @@ use App\Support\Heads;
 use Illuminate\Validation\ValidationException;
 
 // Who is above whom, checked both ways. The owner's chain (2026-10-23):
-//   HR → the President or VP · Operation HQ, Admin, Accounting → HR · a Satellite → Operation HQ
+//   HR, Operation HQ, Accounting → the President or VP · Admin and others → HR · a Satellite → Operation HQ
 //   a guard → endorsed by their region's Satellite and Operation HQ, decided by HR
+// (Operation HQ and Accounting moved from HR to the President or VP, the usual line in an agency.)
 // A head may decide for the people under them, never upward, never a peer, never themselves.
 // The Super Admin is the backup for everyone.
 
@@ -64,9 +65,11 @@ it('lets each office head act for the people under them, in every flow', functio
 })->with([
     'President → HR' => ['president', 'hr'],
     'Vice President → HR' => ['vp', 'hr'],
-    'HR → Operation HQ' => ['hr', 'hq'],
+    'President → Operation HQ' => ['president', 'hq'],
+    'Vice President → Operation HQ' => ['vp', 'hq'],
+    'President → Accounting' => ['president', 'clerk'],
+    'Vice President → Accounting' => ['vp', 'clerk'],
     'HR → Admin' => ['hr', 'admin'],
-    'HR → Accounting' => ['hr', 'clerk'],
     'Operation HQ → Satellite' => ['hq', 'ncrSatellite'],
     'Super Admin (backup) → HR' => ['superAdmin', 'hr'],
     'Super Admin (backup) → Accounting' => ['superAdmin', 'clerk'],
@@ -78,21 +81,25 @@ it('never lets anyone act upward, sideways, across the chain, or for themselves'
 })->with([
     // Upward
     'HR ✗ the President' => ['hr', 'president'],
-    'Accounting ✗ the Vice President' => ['clerk', 'vp'],    'Accounting ✗ HR' => ['clerk', 'hr'],
+    'Accounting ✗ the Vice President' => ['clerk', 'vp'],
     'Admin ✗ HR' => ['admin', 'hr'],
-    'Operation HQ ✗ HR' => ['hq', 'hr'],
     'Satellite ✗ Operation HQ' => ['ncrSatellite', 'hq'],
-    // Sideways (peers)
+    // Sideways (peers: HR, Operation HQ and Accounting all answer to the President or VP)
     'HR ✗ another HR' => ['hr', 'hr2'],
-    'Admin ✗ Accounting' => ['admin', 'clerk'],
-    'Accounting ✗ Admin' => ['clerk', 'admin'],
+    'HR ✗ Operation HQ' => ['hr', 'hq'],
+    'HR ✗ Accounting' => ['hr', 'clerk'],
+    'Operation HQ ✗ HR' => ['hq', 'hr'],
+    'Accounting ✗ HR' => ['clerk', 'hr'],
+    'Operation HQ ✗ Accounting' => ['hq', 'clerk'],
+    'Accounting ✗ Operation HQ' => ['clerk', 'hq'],
     'Satellite ✗ another Satellite' => ['calabarzonSatellite', 'ncrSatellite'],
     // Across the chain: a head is a head only of their own people
     'HR ✗ Satellite (Operation HQ is their head)' => ['hr', 'ncrSatellite'],
-    'Operation HQ ✗ Accounting (HR is their head)' => ['hq', 'clerk'],
-    'Operation HQ ✗ Admin' => ['hq', 'admin'],
-    'President ✗ Accounting (monitors only)' => ['president', 'clerk'],
-    'Vice President ✗ Operation HQ (monitors only)' => ['vp', 'hq'],
+    'Operation HQ ✗ Admin (HR is their head)' => ['hq', 'admin'],
+    'Accounting ✗ Admin' => ['clerk', 'admin'],
+    'Admin ✗ Accounting' => ['admin', 'clerk'],
+    'President ✗ Admin (monitors only)' => ['president', 'admin'],
+    'Vice President ✗ Satellite (monitors only)' => ['vp', 'ncrSatellite'],
     'Satellite ✗ Accounting' => ['ncrSatellite', 'clerk'],
     // Never yourself
     'HR ✗ themselves' => ['hr', 'hr'],
@@ -153,16 +160,30 @@ it('keeps a Satellite to their own region\'s guards', function () {
 });
 
 it('tells only the heads above someone, never a peer, never someone below', function () {
-    expect(Heads::of($this->hr)->modelKeys())->toEqualCanonicalizing([$this->president->id, $this->vp->id])
-        ->and(Heads::of($this->hq)->modelKeys())->toEqualCanonicalizing([$this->hr->id, $this->hr2->id])
-        ->and(Heads::of($this->clerk)->modelKeys())->toEqualCanonicalizing([$this->hr->id, $this->hr2->id])
+    $leadership = [$this->president->id, $this->vp->id];
+
+    expect(Heads::of($this->hr)->modelKeys())->toEqualCanonicalizing($leadership)
+        ->and(Heads::of($this->hq)->modelKeys())->toEqualCanonicalizing($leadership)
+        ->and(Heads::of($this->clerk)->modelKeys())->toEqualCanonicalizing($leadership)
+        ->and(Heads::of($this->admin)->modelKeys())->toEqualCanonicalizing([$this->hr->id, $this->hr2->id])
         ->and(Heads::of($this->ncrSatellite)->modelKeys())->toBe([$this->hq->id]);
+});
+
+it('keeps HR informed (as timekeeper) about office staff it doesn\'t head, but never about HR', function () {
+    $hr = [$this->hr->id, $this->hr2->id];
+
+    expect(Heads::toTell($this->hq)->modelKeys())->toEqualCanonicalizing([$this->president->id, $this->vp->id, ...$hr])
+        ->and(Heads::toTell($this->clerk)->modelKeys())->toEqualCanonicalizing([$this->president->id, $this->vp->id, ...$hr])
+        ->and(Heads::toTell($this->ncrSatellite)->modelKeys())->toEqualCanonicalizing([$this->hq->id, ...$hr])
+        ->and(Heads::toTell($this->admin)->modelKeys())->toEqualCanonicalizing($hr) // HR already heads them
+        ->and(Heads::toTell($this->hr)->modelKeys())->toEqualCanonicalizing([$this->president->id, $this->vp->id]) // not the other HR
+        ->and(Heads::informed($this->guard))->toBeEmpty();
 });
 
 it('stops telling a head who no longer works here, and nobody heads the top', function () {
     $this->hr2->employeeProfile?->forceFill(['employment_status' => 'resigned'])->save();
 
-    expect(Heads::of($this->clerk)->modelKeys())->toBe([$this->hr->id])
+    expect(Heads::of($this->admin)->modelKeys())->toBe([$this->hr->id])
         ->and(Heads::of($this->president))->toBeEmpty()
         ->and(Heads::of($this->superAdmin))->toBeEmpty();
 });

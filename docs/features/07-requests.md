@@ -5,7 +5,7 @@
 | Employee page | My Leave: type, dates, reason; cancel while pending | My Overtime: date, hours, reason (no supervisor to pick: it goes to Operations for a guard, or the office staffer's head) |
 | Refused when | Overlaps a pending/approved leave; starts in the past (sick and emergency: up to 7 days back is fine) | A pending/approved request exists for that date |
 | Staff page | Leave Requests (`monitor-requests`) | Overtime Requests (`monitor-requests`) |
-| Who decides | **Guards:** HR (`review-field-leave`), after Operations endorses. **Office staff:** their head (`App\Support\Heads`): HR for Admin, Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR | Guards: HR, Admin, Operation HQ, Satellite in its region (`review-overtime`). Office staff: their head |
+| Who decides | **Guards:** HR (`review-field-leave`), after Operations endorses. **Office staff:** their head (`App\Support\Heads`): HR for Admin and others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ and Accounting. HR sees every non-HR staffer's (view only) | Guards: HR, Admin, Operation HQ, Satellite in its region (`review-overtime`). Office staff: their head |
 | Review | Approve / reject with a note | Approve with **approved minutes ≤ requested**, or reject |
 | Actions | `SubmitLeaveRequest`, `CancelLeaveRequest`, `ReviewLeaveRequest` | `SubmitOvertimeRequest`, `ReviewOvertimeRequest` |
 

@@ -59,10 +59,10 @@ describe('leave approvers', function () {
     it('has HR approve guards\' leave and the office staff it heads, but not another HR member\'s', function () {
         $hr = staff(Role::Hr);
         $guardLeave = leaveOf(employee());
-        $officeLeave = leaveOf(staff(Role::Accounting));
+        $officeLeave = leaveOf(staff(Role::Admin));
         $hrColleagueLeave = leaveOf(staff(Role::Hr));
 
-        // HR heads Accounting (App\Support\Heads); an HR member's leave is the President or VP's.
+        // HR heads Admin (App\Support\Heads); an HR member's leave is the President or VP's.
         Livewire::actingAs($hr)->test(LeaveRequests::class)
             ->assertSee($guardLeave->user->name)
             ->call('startReview', $guardLeave->id)->call('approve')->assertHasNoErrors()

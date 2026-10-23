@@ -16,14 +16,15 @@ use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 
 // Office staff's leave and overtime go to their head (App\Support\Heads, the owner's chain):
-// HR for Accounting, Admin, Operation HQ…; the President or VP for HR. The President or VP
-// still SEE every office staffer's (they monitor) but decide only HR's.
+// HR for Admin and others; the President or VP for HR, Operation HQ and Accounting. The
+// President or VP still SEE every office staffer's, and HR every non-HR staffer's (they monitor).
 
 beforeEach(function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-08 10:00'));
     Notification::fake();
 
-    $this->accountant = staff(Role::Accounting);
+    // An Admin staffer: HR is their head.
+    $this->accountant = staff(Role::Admin);
     $this->accountant->forceFill(['name' => 'Olivia Office'])->save();
     $this->guard = employee();
     $this->guard->forceFill(['name' => 'Gary Guard'])->save();
@@ -45,7 +46,7 @@ function fileLeave(object $test, $user): LeaveRequest
     return LeaveRequest::query()->where('user_id', $user->id)->sole();
 }
 
-it('sends an Accounting clerk\'s leave to HR, their head, and a guard\'s up the Operations chain', function () {
+it('sends an Admin staffer\'s leave to HR, their head, and a guard\'s up the Operations chain', function () {
     $officeLeave = fileLeave($this, $this->accountant);
     $guardLeave = fileLeave($this, $this->guard);
 
@@ -128,7 +129,33 @@ it('words the bell item as a short title and one fact per line', function () {
     });
 });
 
-it('has an Accounting clerk send overtime to HR, their head, who decides it', function () {
+it('sends Accounting\'s and Operation HQ\'s leave and overtime to the President or VP, with HR watching', function () {
+    $cashier = staff(Role::Accounting);
+    $cashier->forceFill(['name' => 'Carla Cashier'])->save();
+    $leave = fileLeave($this, $cashier);
+    $opsLeave = fileLeave($this, $this->opsHq);
+
+    expect($leave->stage?->value)->toBe('executive')->and($opsLeave->stage?->value)->toBe('executive');
+    Notification::assertSentTo($this->executive, LeaveAwaitingYou::class, fn (LeaveAwaitingYou $notice) => $notice->leave->is($leave));
+    Notification::assertSentTo($this->executive, LeaveAwaitingYou::class, fn (LeaveAwaitingYou $notice) => $notice->leave->is($opsLeave));
+    Notification::assertNotSentTo($this->hr, LeaveAwaitingYou::class);
+
+    // HR sees both (monitor only) and can't decide them.
+    Livewire::actingAs($this->hr)->test(LeaveRequests::class)->call('showGroup', 'office')
+        ->assertSee('Carla Cashier')->assertSee('Oscar Ops')->assertSee('View only')
+        ->call('startReview', $leave->id)->assertHasErrors('list');
+
+    Livewire::actingAs($cashier)->test(MyOvertime::class)->assertSee('Goes to the President or Vice President automatically')
+        ->set('date', '2026-10-08')->set('hours', '2')->set('reason', 'Month-end close')->call('submit')->assertHasNoErrors();
+    Notification::assertSentTo($this->executive, RequestFiled::class);
+    Notification::assertNotSentTo($this->hr, RequestFiled::class);
+
+    Livewire::actingAs($this->executive)->test(LeaveRequests::class)
+        ->call('startReview', $leave->id)->call('approve')->assertHasNoErrors();
+    expect($leave->fresh()?->reviewed_by)->toBe($this->executive->id);
+});
+
+it('has an Admin staffer send overtime to HR, their head, who decides it', function () {
     // Nobody to pick: it goes to their head.
     Livewire::actingAs($this->accountant)->test(MyOvertime::class)
         ->assertSee('Goes to HR automatically')->assertDontSee('Executive')

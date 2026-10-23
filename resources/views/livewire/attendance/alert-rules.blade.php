@@ -12,7 +12,7 @@
             <div><dt class="text-xs text-gray-500 dark:text-gray-400">Office staff not clocked in: remind them</dt><dd class="mt-0.5 font-semibold text-gray-800 tabular-nums dark:text-gray-100">{{ $rules['office_clock_in_reminder_minutes'] }} min after grace</dd></div>
             <div><dt class="text-xs text-gray-500 dark:text-gray-400">Office work days</dt><dd class="mt-0.5 font-semibold text-gray-800 dark:text-gray-100">{{ $days }}</dd></div>
         </dl>
-        <x-slot:footer><p class="text-xs text-gray-500 dark:text-gray-400">The head: Operation HQ and the region's Satellite for a guard; Operation HQ for a Satellite Operation; the President or Vice President for HR; HR for other office staff (Admin, Accounting, Operation HQ…). No alert on approved leave or a holiday.</p></x-slot:footer>
+        <x-slot:footer><p class="text-xs text-gray-500 dark:text-gray-400">The head: Operation HQ and the region's Satellite for a guard; Operation HQ for a Satellite Operation; the President or Vice President for HR, Operation HQ and Accounting; HR for other office staff (Admin…). HR is also told about office staff it doesn't head. No alert on approved leave or a holiday.</p></x-slot:footer>
     </x-ui.card>
 
     @if ($editing)

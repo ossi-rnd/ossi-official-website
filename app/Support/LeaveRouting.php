@@ -15,8 +15,9 @@ use Illuminate\Support\Facades\Notification;
 /**
  * Who a leave request goes to next.
  *
- *   office staff → their head, who decides (Heads): HR for Admin, Accounting, Operation HQ…;
- *                  Operation HQ for a Satellite; the President or VP (stage "Executive") for HR
+ *   office staff → their head, who decides (Heads): HR for Admin and others; Operation HQ
+ *                  for a Satellite; the President or VP (stage "Executive") for HR, Operation HQ
+ *                  and Accounting
  *   guard        → Satellite Operation of the guard's region (endorses)
  *                → Operation HQ (endorses)
  *                → HR (decides, final)

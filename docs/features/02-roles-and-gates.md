@@ -93,9 +93,11 @@ Roles & Access shows this same table, built from the enum.
 | Person | Their head |
 |---|---|
 | A guard | Operations: Operation HQ, and the Satellite of their client's region |
-| HR | the President or Vice President |
+| HR, Operation HQ, Accounting | the President or Vice President |
 | A Satellite Operation | Operation HQ |
-| Other office staff (Admin, Accounting, Operation HQ, Developer, staff with no role) | HR |
+| Other office staff (Admin, Developer, staff with no role) | HR |
+
+Operation HQ and Accounting were under HR until the owner moved them on 2026-10-23: in a security agency, Operations and Accounting usually answer to the President / GM, and HR administers leave rather than heading other departments. HR still **sees** every non-HR staffer's requests and time away (view only), and is copied on their attendance alerts (`Heads::informed` / `toTell`).
 
 One class answers both "who heads this person" (`Heads::of`, `Heads::label`) and "does X head Y" (`Heads::isHeadOf`). It's used for:
 - attendance alerts (missed clock-out, office staff not clocked in);

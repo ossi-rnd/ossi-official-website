@@ -113,7 +113,7 @@ class DemoSeeder extends Seeder
 
         // Before payroll is generated, so the demo payslips use these rates.
         $this->call(ClientSeeder::class); // Region → Province → Client, linked to the guards' detachments.
-        $this->call(OperationsAccountsSeeder::class); // Executive, Operation HQ, Satellite Operation (Region IV-A).
+        $this->call(OperationsAccountsSeeder::class); // President, Vice President, Operation HQ, Satellite Operation (Region IV-A).
         $this->rates();
         $this->attendance($guards, $calculator);
         $this->requests($guards, $superAdmin);

@@ -233,10 +233,19 @@ it('shows completion on the checklist and in the employee list', function () {
     checklistFor($this->hr, $this->profile)
         ->assertSee('1 of 21 documents on file')
         ->assertSee('1 expired')
+        ->assertSee('Only what needs action (20 of 21)')
         ->set('onlyOpen', true)
         ->assertDontSee('NBI Clearance');
 
     Livewire::actingAs($this->hr)->test(Employees::class)->assertSee('1/21');
+});
+
+it('offers "Only what needs action" only when it would change the list', function () {
+    // Nothing on file yet: every document needs action, so the filter would hide nothing.
+    checklistFor($this->hr, $this->profile)->assertSee('201 file')->assertDontSee('Only what needs action');
+
+    requirementRecord($this->profile, Requirement::NbiClearance, ['expires_on' => now()->addYear()->toDateString()]);
+    checklistFor($this->hr, $this->profile)->assertSee('Only what needs action (20 of 21)');
 });
 
 it('renders the checklist on My Profile and on the employee record', function () {
