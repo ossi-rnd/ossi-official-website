@@ -76,7 +76,9 @@
                                         @else
                                             <x-ui.badge tone="amber">Not confirmed yet</x-ui.badge>
                                         @endif
-                                        @if ($issue->charged && $issue->deduction?->declined_at)
+                                        @if ($issue->charged && $issue->employee_deduction_id === null)
+                                            <x-ui.badge tone="amber">Charge not set yet (Accounting)</x-ui.badge>
+                                        @elseif ($issue->charged && $issue->deduction?->declined_at)
                                             <x-ui.badge tone="red">Deduction declined</x-ui.badge>
                                         @elseif ($issue->charged && $issue->deduction?->awaiting_authorization)
                                             <x-ui.badge tone="amber">Deduction not authorized yet</x-ui.badge>
@@ -170,6 +172,39 @@
 
     @endif
 
+    @can('manage-payroll')
+        <x-ui.card title="Uniform charges to set" description="Uniforms handed over by Operations or Admin. Set how much each payslip takes (final); they're then asked to authorize it on My Payslips, and nothing is deducted before they do.">
+            <div class="overflow-x-auto">
+                <table class="ui-table">
+                    <thead><tr><th class="ui-th">Who</th><th class="ui-th">Uniform</th><th class="ui-th">Total</th><th class="ui-th">Per payslip</th></tr></thead>
+                    <tbody>
+                        @forelse ($this->pendingCharges as $charge)
+                            <tr wire:key="charge-{{ $charge->id }}">
+                                <td class="ui-td font-medium text-gray-800 dark:text-gray-100">{{ $charge->user->name }}</td>
+                                <td class="ui-td">
+                                    <p>{{ $charge->describe() }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Issued {{ $charge->issued_at?->format('M j, Y') }} by {{ $charge->issuer?->name ?? '—' }}</p>
+                                </td>
+                                <td class="ui-td whitespace-nowrap tabular-nums">{{ $money($charge->total()) }}</td>
+                                <td class="ui-td">
+                                    <form wire:submit="setCharge({{ $charge->id }})" class="flex items-start gap-2">
+                                        <div class="w-32">
+                                            <x-ui.input type="number" step="0.01" min="0.01" :max="$charge->total()" wire:model="chargeInstallments.{{ $charge->id }}" placeholder="₱" aria-label="Per payslip for {{ $charge->user->name }}" />
+                                        </div>
+                                        <x-ui.button type="submit" size="sm" variant="dark" wire:target="setCharge({{ $charge->id }})">Set</x-ui.button>
+                                    </form>
+                                    @error("chargeInstallments.{$charge->id}")<p class="mt-1 text-xs text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="4" class="ui-td py-8 text-center">Nothing waiting. Uniforms that are handed over show here.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </x-ui.card>
+    @endcan
+
     @php
         $managesItems = $viewer->can('manage-equipment-items');
         $setsPrices = $viewer->can('set-equipment-prices');
@@ -178,8 +213,7 @@
         <x-ui.card title="Items and prices" :description="'Admin keeps the items and their sizes; '.($setsPrices ? 'you set the prices.' : 'Accounting sets the prices.').' A uniform is charged to the employee, with their authority to deduct, so it can\'t be issued until it has a price. Radios come from the Radios masterlist.'">
             @if ($managesItems)
                 <x-slot:actions>
-                    <x-ui.button type="button" variant="secondary" size="sm" wire:click="startItem"><x-icon name="plus" class="h-4 w-4" /> Add item</x-ui.button>
-                </x-slot:actions>
+                    <x-ui.button type="button" variant="secondary" size="sm" wire:click="startItem"><x-icon name="plus" class="h-4 w-4" /> Add item</x-ui.button>                </x-slot:actions>
             @endif
             <div class="overflow-x-auto">
                 <table class="ui-table">
@@ -187,7 +221,21 @@
                     <tbody>
                         @forelse ($this->allItems as $item)
                             <tr wire:key="item-{{ $item->id }}" @class(['opacity-60' => ! $item->is_active])>
-                                <td class="ui-td font-medium text-gray-800 dark:text-gray-100">{{ $item->name }}{{ $item->is_active ? '' : ' · not given out' }}</td>
+                                <td class="ui-td">
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-50 dark:bg-gray-800">
+                                            @if ($item->photoUrl())
+                                                <img src="{{ $item->photoUrl() }}" alt="" class="h-full w-full object-cover" loading="lazy">
+                                            @else
+                                                <x-icon name="package" class="h-5 w-5 text-gray-300 dark:text-gray-600" />
+                                            @endif
+                                        </div>
+                                        <div class="min-w-0">
+                                            <p class="font-medium text-gray-800 dark:text-gray-100">{{ $item->name }}{{ $item->is_active ? '' : ' · not given out' }}</p>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">For {{ strtolower($item->audience->label()) }}</p>
+                                        </div>
+                                    </div>
+                                </td>
                                 <td class="ui-td">{{ $item->kind->shortLabel() }}</td>
                                 <td class="ui-td text-xs">{{ $item->hasSizes() ? implode(', ', $item->sizeList()) : 'One size' }}</td>
                                 <td class="ui-td whitespace-nowrap tabular-nums">
@@ -217,7 +265,7 @@
         @php $picked = $this->pickedItem(); @endphp
         <x-ui.modal :title="$fromRequestId ? 'Issue what they asked for' : 'Issue equipment'" close="cancelIssue" max-width="lg">
             <form id="issue-form" wire:submit="issue" class="space-y-4">
-                <x-ui.select label="To" wire:model="issueToId" searchable :disabled="$fromRequestId !== null">
+                <x-ui.select label="To" wire:model.live="issueToId" searchable :disabled="$fromRequestId !== null">
                     <option value="">Choose a person</option>
                     @foreach ($this->people as $person)
                         <option value="{{ $person->id }}">{{ $person->name }}</option>
@@ -242,7 +290,7 @@
                 @else
                     <x-ui.select label="Item" wire:model.live="issueItemId">
                         <option value="">Choose an item</option>
-                        @foreach ($this->activeItems as $item)
+                        @foreach ($this->issuableItems() as $item)
                             <option value="{{ $item->id }}">{{ $item->name }} · {{ $item->kind->shortLabel() }}{{ $item->kind === \App\Enums\EquipmentKind::Uniform ? ' · '.$item->priceLabel() : '' }}</option>
                         @endforeach
                     </x-ui.select>
@@ -257,8 +305,10 @@
                     </div>
                     @if ($picked?->kind === \App\Enums\EquipmentKind::Uniform)
                         @php $unit = $picked->priceFor($picked->hasSizes() ? ($issueSize ?: null) : null); @endphp
-                        <x-ui.input label="Deduct per payslip (₱)" type="number" step="0.01" min="0.01" wire:model="issueInstallment"
-                            :hint="$picked->hasSizes() && $issueSize === '' ? 'Choose the size to see the total. They must authorize it on My Payslips before anything is deducted.' : ($unit ? 'Total '.$money($unit * max(1, (int) $issueQuantity)).'. They must authorize it on My Payslips before anything is deducted.' : 'Accounting hasn\'t set a price for this yet.')" />
+                        <x-ui.alert tone="blue" class="text-xs">
+                            Charged to them{{ $unit && ! ($picked->hasSizes() && $issueSize === '') ? ': '.$money($unit * max(1, (int) $issueQuantity)) : '' }}.
+                            {{ $unit === null ? 'Accounting hasn\'t set a price for this yet.' : 'Accounting sets how much each payslip takes, and they authorize it on My Payslips before anything is deducted.' }}
+                        </x-ui.alert>
                     @elseif ($picked)
                         <p class="text-xs text-gray-500 dark:text-gray-400">Company property: they confirm they received it and are accountable for it. Nothing is deducted.</p>
                     @endif
@@ -338,6 +388,25 @@
                         <option value="{{ $kind->value }}">{{ $kind->label() }}</option>
                     @endforeach
                 </x-ui.select>
+                <x-ui.select label="Shown in the shop to" wire:model="itemAudience">
+                    @foreach (\App\Enums\EquipmentAudience::cases() as $audience)
+                        <option value="{{ $audience->value }}">{{ $audience->label() }}</option>
+                    @endforeach
+                </x-ui.select>
+                @php $editingItem = $editingItemId ? $this->allItems->firstWhere('id', $editingItemId) : null; @endphp
+                <div class="flex items-start gap-3">
+                    @if ($itemPhoto && method_exists($itemPhoto, 'isPreviewable') && $itemPhoto->isPreviewable())
+                        <img src="{{ $itemPhoto->temporaryUrl() }}" alt="" class="h-16 w-16 shrink-0 rounded-lg object-cover">
+                    @elseif ($editingItem?->photoUrl() && ! $removeItemPhoto)
+                        <img src="{{ $editingItem->photoUrl() }}" alt="" class="h-16 w-16 shrink-0 rounded-lg object-cover">
+                    @endif
+                    <div class="min-w-0 flex-1 space-y-1">
+                        <x-ui.file-input :label="$editingItem?->photo_path ? 'Replace the photo (optional)' : 'Photo (optional)'" model="itemPhoto" id="item-photo" accept="image/jpeg,image/png,image/webp" hint="JPG, PNG or WebP, up to 3 MB. Shown on the item's card in the shop." />
+                        @if ($editingItem?->photo_path && ! $itemPhoto)
+                            <x-ui.checkbox id="item-remove-photo" label="Remove the photo" wire:model.live="removeItemPhoto" />
+                        @endif
+                    </div>
+                </div>
                 <fieldset class="space-y-2">
                     <legend class="ui-label">Sizes</legend>
                     <p class="text-xs text-gray-500 dark:text-gray-400">Tick the sizes it comes in, or add your own (shoes 38-45, waist 28-40, "Free size"). None: one size.</p>

@@ -10,9 +10,11 @@ use App\Actions\Equipment\RequestEquipment;
 use App\Actions\Equipment\ReturnEquipment;
 use App\Actions\Equipment\SaveEquipmentItem;
 use App\Actions\Equipment\SetEquipmentItemPrices;
+use App\Actions\Equipment\SetUniformCharge;
 use App\Actions\Payroll\AnswerDeductionAuthorization;
 use App\Enums\DeductionAuthorizationBasis;
 use App\Enums\DeductionType;
+use App\Enums\EquipmentAudience;
 use App\Enums\EquipmentIncidentDecision;
 use App\Enums\EquipmentIncidentKind;
 use App\Enums\EquipmentKind;
@@ -32,8 +34,11 @@ use App\Models\Radio;
 use App\Models\User;
 use App\Notifications\UpdateNotice;
 use Carbon\CarbonImmutable;
+use Database\Seeders\EquipmentSampleSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 
@@ -78,7 +83,7 @@ function dailyRate(User $user, float $rate): void
 
 function issueFlashlight(object $test, ?User $to = null, ?User $by = null): EquipmentIssue
 {
-    return app(IssueEquipment::class)->handle($by ?? $test->opsHq, $to ?? $test->guard, $test->flashlight, null, null, 1, null);
+    return app(IssueEquipment::class)->handle($by ?? $test->opsHq, $to ?? $test->guard, $test->flashlight, null, null, 1);
 }
 
 it('has Operations issue to guards (a Satellite only in its region) and Admin to office staff', function (string $issuer, string $person, bool $allowed) {
@@ -95,7 +100,7 @@ it('has Operations issue to guards (a Satellite only in its region) and Admin to
 ]);
 
 it('issues a radio from the masterlist; the guard confirms it word for word and is accountable for it', function () {
-    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, null, $this->radio, null, 1, null);
+    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, null, $this->radio, null, 1);
 
     expect($issue->charged)->toBeFalse()
         ->and($issue->label)->toBe('Motorola XiR P3688 radio (SN 123ABC)')
@@ -104,7 +109,7 @@ it('issues a radio from the masterlist; the guard confirms it word for word and 
     Notification::assertSentTo($this->guard, UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Equipment issued: confirm you received it' && $n->email);
 
     // A radio already out can't be issued twice.
-    expect(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->caviteGuard, null, $this->radio->fresh(), null, 1, null))->toThrow(ValidationException::class);
+    expect(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->caviteGuard, null, $this->radio->fresh(), null, 1))->toThrow(ValidationException::class);
 
     app(AcknowledgeEquipment::class)->handle($this->guard, $issue, 'fil');
     expect($issue->fresh()?->acknowledgement)->toStartWith('Natanggap ko ang Motorola XiR P3688 radio (SN 123ABC)')
@@ -119,12 +124,22 @@ it('issues a radio from the masterlist; the guard confirms it word for word and 
         ->and($this->radio->fresh()?->assigned_user_id)->toBeNull();
 });
 
-it('charges every uniform, but takes nothing until the employee authorizes the deduction', function () {
-    expect(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $this->polo, null, 'L', 2, null))
-        ->toThrow(ValidationException::class, 'Per payslip');
+it('has Operations hand a uniform over, Accounting set the charge (final), and the guard authorize it', function () {
+    // Operations hands it over: no money fields. Accounting is told.
+    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $this->polo, null, 'L', 2);
+    expect($issue->charged)->toBeTrue()->and($issue->employee_deduction_id)->toBeNull()
+        ->and(EquipmentIssue::query()->awaitingCharge()->count())->toBe(1);
+    Notification::assertSentTo($this->clerk, UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Uniform charge to set: '.$this->guard->name);
 
-    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $this->polo, null, 'L', 2, 300.0);
+    // Only Accounting sets it, within the total.
+    expect(fn () => app(SetUniformCharge::class)->handle($this->opsHq, $issue, 300.0))->toThrow(AuthorizationException::class)
+        ->and(fn () => app(SetUniformCharge::class)->handle($this->clerk, $issue, 1000.0))->toThrow(ValidationException::class, 'at most the total, ₱900.00');
+
+    app(SetUniformCharge::class)->handle($this->clerk, $issue, 300.0);
+    $issue->refresh();
     $deduction = $issue->deduction;
+    expect(EquipmentIssue::query()->awaitingCharge()->count())->toBe(0)
+        ->and(fn () => app(SetUniformCharge::class)->handle($this->clerk, $issue, 300.0))->toThrow(ValidationException::class, 'already set');
 
     expect($issue->charged)->toBeTrue()
         ->and($issue->describe())->toBe('Uniform polo (L) × 2')
@@ -152,7 +167,7 @@ it('has Admin keep items and sizes, and Accounting set prices (Accounting is tol
     Notification::assertSentTo($this->clerk, UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Uniform needs a price: Combat boots');
 
     // Can't be issued until it has a price.
-    expect(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots, null, '41', 1, 100.0))
+    expect(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots, null, '41', 1))
         ->toThrow(ValidationException::class, 'hasn\'t set this uniform\'s price for size 41');
 
     // One price, and a size that costs more.
@@ -162,8 +177,9 @@ it('has Admin keep items and sizes, and Accounting set prices (Accounting is tol
         ->and($boots->fresh()?->priceLabel())->toBe('₱1,500.00 to ₱1,650.00')
         ->and(EquipmentItem::needingPriceCount())->toBe(0);
 
-    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots->fresh(), null, '42', 1, 550.0);
-    expect((float) $issue->unit_price)->toBe(1650.0)->and((float) $issue->deduction?->original_amount)->toBe(1650.0);
+    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots->fresh(), null, '42', 1);
+    app(SetUniformCharge::class)->handle($this->clerk, $issue, 550.0);
+    expect((float) $issue->unit_price)->toBe(1650.0)->and((float) $issue->fresh()?->deduction?->original_amount)->toBe(1650.0);
 
     // A later price change doesn't touch what was issued; a size Admin keeps keeps its price.
     app(SetEquipmentItemPrices::class)->handle($boots->fresh(), 1800.0, ['42' => 2000.0], $this->clerk);
@@ -171,7 +187,7 @@ it('has Admin keep items and sizes, and Accounting set prices (Accounting is tol
     expect((float) $issue->fresh()?->unit_price)->toBe(1650.0)
         ->and($boots->fresh()?->priceFor('42'))->toBe(2000.0)
         ->and($boots->fresh()?->priceFor('43'))->toBe(1800.0)
-        ->and(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots->fresh(), null, '39', 1, 100.0))->toThrow(ValidationException::class, 'Choose the size');
+        ->and(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots->fresh(), null, '39', 1))->toThrow(ValidationException::class, 'Choose the size');
 });
 
 it('lets Admin tick standard sizes and add custom ones, ranges included', function () {
@@ -187,6 +203,20 @@ it('lets Admin tick standard sizes and add custom ones, ranges included', functi
     expect(EquipmentItem::query()->where('name', 'Duty trousers')->sole()->sizeList())->toBe(['L', '28', '30', '31', '32', 'W34/L32']);
 });
 
+it('lets Accounting set a uniform\'s charge from the page; Operations sees it waiting', function () {
+    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $this->polo, null, 'M', 1);
+
+    Livewire::actingAs($this->opsHq)->test(Equipment::class)->set('show', 'out')->assertSee('Charge not set yet (Accounting)');
+
+    Livewire::actingAs($this->clerk)->test(Equipment::class)
+        ->assertSee('Uniform charges to set')->assertSee('Uniform polo (M)')
+        ->call('setCharge', $issue->id)->assertHasErrors('chargeInstallments.'.$issue->id)
+        ->set('chargeInstallments.'.$issue->id, '150')->call('setCharge', $issue->id)->assertHasNoErrors()
+        ->assertSee('Nothing waiting');
+
+    expect((float) $issue->fresh()?->deduction?->installment_amount)->toBe(150.0);
+});
+
 it('shows Accounting only the item list, where they set prices per size', function () {
     $this->actingAs($this->clerk)->get(route('equipment'))->assertOk()->assertSee('Items and prices')->assertSee('Set price')->assertDontSee('Issue equipment');
 
@@ -199,15 +229,15 @@ it('shows Accounting only the item list, where they set prices per size', functi
 });
 
 it('sends a guard\'s request to Operations and an office staffer\'s to Admin, then issues or turns it down', function () {
-    $guardAsks = app(RequestEquipment::class)->handle($this->guard, $this->polo, 'M', 1, 'My polo is torn');
+    $guardAsks = app(RequestEquipment::class)->handle($this->guard, [['item' => $this->polo, 'size' => 'M', 'quantity' => 1]], 'My polo is torn')->sole();
     Notification::assertSentTo([$this->opsHq, $this->satellite], UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Equipment request: Gary Guard');
     Notification::assertNotSentTo($this->admin, UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Equipment request: Gary Guard');
 
-    $clerkAsks = app(RequestEquipment::class)->handle($this->clerk, $this->flashlight, null, 1, null);
+    $clerkAsks = app(RequestEquipment::class)->handle($this->clerk, [['item' => $this->flashlight, 'size' => null, 'quantity' => 1]], null)->sole();
     Notification::assertSentTo($this->admin, UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Equipment request: Carla Clerk');
 
     // Issued from the request: the same record, now with them.
-    app(IssueEquipment::class)->handle($this->satellite, $this->guard, $this->polo, null, 'M', 1, 450.0, $guardAsks);
+    app(IssueEquipment::class)->handle($this->satellite, $this->guard, $this->polo, null, 'M', 1, $guardAsks);
     expect($guardAsks->fresh()?->status)->toBe(EquipmentStatus::Issued)->and(EquipmentIssue::query()->count())->toBe(2);
 
     app(RejectEquipmentRequest::class)->handle($this->admin, $clerkAsks, 'One per office; borrow the shared one');
@@ -250,7 +280,7 @@ it('charges damage only after the employee was heard, by their head, within DOLE
 });
 
 it('lets the head decide once the days to explain have passed, and a lost item leaves their hands', function () {
-    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, null, $this->radio, null, 1, null);
+    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, null, $this->radio, null, 1);
     $incident = app(ReportEquipmentIncident::class)->handle($this->opsHq, $issue, EquipmentIncidentKind::Lost, 'Not turned over at the 1800 changeover; guard says it was left at the post.');
     expect($this->radio->fresh()?->status)->toBe(RadioStatus::Lost);
 
@@ -289,10 +319,79 @@ it('works from the pages: Operations issues, the guard confirms and requests on 
     $mine->call('acknowledge', $issue->id)->assertHasNoErrors()->assertSee('You confirmed receiving it');
     expect(MyEquipment::waitingFor($this->guard))->toBe(0);
 
-    $mine->call('startRequest')->set('requestItem', (string) $this->polo->id)->set('requestSize', 'XL')->set('requestQuantity', '1')->call('request')->assertHasNoErrors();
+    $mine->set('tab', 'shop')->set('picks.'.$this->polo->id.'.size', 'XL')->call('addToCart', $this->polo->id)->call('sendCart')->assertHasNoErrors();
     expect(EquipmentIssue::query()->where('status', EquipmentStatus::Requested)->count())->toBe(1);
 
     Livewire::actingAs($this->opsHq)->test(Equipment::class)->assertSee('Gary Guard')->assertSet('show', '');
+});
+
+it('shows guards only guard items in the shop, and sends the whole cart as one request', function () {
+    $boots = app(SaveEquipmentItem::class)->handle(null, 'Combat boots', EquipmentKind::Uniform, ['41', '42'], true, $this->admin, EquipmentAudience::Guards);
+    app(SetEquipmentItemPrices::class)->handle($boots, 1500.0, ['42' => 1650.0], $this->clerk);
+    $lanyard = app(SaveEquipmentItem::class)->handle(null, 'Office ID lanyard', EquipmentKind::Gear, [], true, $this->admin, EquipmentAudience::Office);
+
+    $shop = Livewire::actingAs($this->guard)->test(MyEquipment::class)
+        ->assertSet('tab', '')->assertSee('Combat boots')->assertSee('Uniform polo')->assertDontSee('Office ID lanyard');
+
+    // A size is needed; the same item and size again adds to its quantity.
+    $shop->call('addToCart', $boots->id)->assertHasErrors('picks.'.$boots->id)
+        ->call('pickSize', $boots->id, '42')->assertSee('₱1,650.00')
+        ->call('pickQuantity', $boots->id, -1)->assertSet('picks.'.$boots->id.'.quantity', '1') // never below 1
+        ->call('addToCart', $boots->id)->call('addToCart', $boots->id)
+        ->call('addToCart', $this->flashlight->id)
+        ->assertSet('cart', [['item_id' => $boots->id, 'size' => '42', 'quantity' => 2], ['item_id' => $this->flashlight->id, 'size' => null, 'quantity' => 1]])
+        ->assertSee('₱3,300.00') // the boots' total, size 42 price
+        ->call('changeQuantity', 0, -1)->set('cartNote', 'For the night shift')
+        ->call('sendCart')->assertHasNoErrors()->assertSet('cart', [])->assertSet('tab', 'mine');
+
+    expect(EquipmentIssue::query()->where('user_id', $this->guard->id)->where('status', EquipmentStatus::Requested)->pluck('label')->all())->toBe(['Combat boots', 'Flashlight'])
+        ->and((float) EquipmentIssue::query()->where('label', 'Combat boots')->value('unit_price'))->toBe(1650.0);
+    Notification::assertSentToTimes($this->opsHq, UpdateNotice::class, 1);
+    Notification::assertSentTo($this->opsHq, UpdateNotice::class, fn (UpdateNotice $n) => $n->body === "Combat boots (42)\nFlashlight\nNote: For the night shift");
+
+    // An office item can't be requested by, or issued to, a guard.
+    expect(fn () => app(RequestEquipment::class)->handle($this->guard, [['item' => $lanyard, 'size' => null, 'quantity' => 1]], null))->toThrow(ValidationException::class, 'isn\'t available to you')
+        ->and(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $lanyard, null, null, 1))->toThrow(ValidationException::class, 'That item is for Office staff');
+    Livewire::actingAs($this->clerk)->test(MyEquipment::class)->assertSee('Office ID lanyard')->assertDontSee('Combat boots');
+});
+
+it('keeps an item\'s photo private, for signed-in staff, and replaces it cleanly', function () {
+    Storage::fake((string) config('attendance.photo_disk'));
+
+    Livewire::actingAs($this->admin)->test(Equipment::class)
+        ->call('startItem', $this->polo->id)->set('itemPhoto', UploadedFile::fake()->image('polo.jpg', 600, 450))->call('saveItem')->assertHasNoErrors();
+    $first = $this->polo->fresh()?->photo_path;
+    expect($first)->toStartWith('equipment/'.$this->polo->id.'/');
+
+    $this->actingAs($this->guard)->get((string) $this->polo->fresh()?->photoUrl())->assertOk();
+    auth()->logout();
+    $this->get((string) $this->polo->fresh()?->photoUrl())->assertRedirect();
+
+    // Not an image: refused.
+    Livewire::actingAs($this->admin)->test(Equipment::class)
+        ->call('startItem', $this->polo->id)->set('itemPhoto', UploadedFile::fake()->create('polo.pdf', 10, 'application/pdf'))->call('saveItem')->assertHasErrors('itemPhoto');
+
+    Livewire::actingAs($this->admin)->test(Equipment::class)
+        ->call('startItem', $this->polo->id)->set('itemPhoto', UploadedFile::fake()->image('polo2.png'))->call('saveItem')->assertHasNoErrors();
+    Storage::disk((string) config('attendance.photo_disk'))->assertMissing((string) $first);
+
+    Livewire::actingAs($this->admin)->test(Equipment::class)
+        ->call('startItem', $this->polo->id)->set('removeItemPhoto', true)->call('saveItem')->assertHasNoErrors();
+    expect($this->polo->fresh()?->photo_path)->toBeNull();
+});
+
+it('seeds sample shop items with pictures, once', function () {
+    Storage::fake((string) config('attendance.photo_disk'));
+
+    $this->seed(EquipmentSampleSeeder::class);
+    $this->seed(EquipmentSampleSeeder::class);
+
+    $samples = EquipmentItem::query()->where('name', 'like', EquipmentSampleSeeder::PREFIX.'%')->get();
+    expect($samples)->toHaveCount(10)
+        ->and($samples->every(fn (EquipmentItem $item) => Storage::disk((string) config('attendance.photo_disk'))->exists((string) $item->photo_path)))->toBeTrue()
+        ->and($samples->firstWhere('name', 'SAMPLE Combat boots')?->priceFor('45'))->toBe(1650.0);
+
+    Livewire::actingAs($this->guard)->test(MyEquipment::class)->assertSee('SAMPLE Combat boots')->assertDontSee('SAMPLE Office polo');
 });
 
 it('opens the desk only for issuers, heads and Accounting (prices), and the item list only for Admin and Accounting', function () {

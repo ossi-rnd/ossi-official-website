@@ -11,6 +11,7 @@ use App\Http\Controllers\SessionKeepAliveController;
 use App\Http\Controllers\ShowAvatarController;
 use App\Http\Controllers\ShowCompanyDocumentController;
 use App\Http\Controllers\ShowComplaintFileController;
+use App\Http\Controllers\ShowEquipmentPhotoController;
 use App\Http\Controllers\ShowLeaveDocumentController;
 use App\Http\Controllers\ShowLoadProofController;
 use App\Http\Controllers\ShowPatrolScanPhotoController;
@@ -214,6 +215,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Equipment: issuers (Operations for guards, Admin for office staff), and heads deciding
     // damage or loss reports (the page checks Equipment::canOpen).
     Route::get('/equipment', Equipment::class)->name('equipment');
+    // An item's photo in the shop: any signed-in account.
+    Route::get('/equipment/items/{item}/photo', ShowEquipmentPhotoController::class)->name('equipment.photo');
 
     // Petty cash: Accounting and leadership see every fund; a custodian their own (the page checks PettyCashFund::canOpenPage).
     Route::get('/petty-cash', PettyCash::class)->name('petty-cash');

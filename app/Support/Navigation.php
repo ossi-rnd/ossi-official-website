@@ -98,11 +98,12 @@ final class Navigation
                 // Badge: radios whose NTC permit expires within 30 days, or has.
                 $can(Ability::ManageRadios) ? self::item('Radios', 'radios', 'radio', badge: Radio::query()->permitDueBy(CarbonImmutable::today()->addDays(Radio::DUE_SOON_DAYS))->count()) : null,
                 // Issuers (Operations, Admin): badge = requests waiting + reports to decide. Accounting:
-                // + uniforms waiting for a price. A head who doesn't issue (HR, the President or VP)
+                // + uniforms waiting for a price + uniform charges to set. A head who doesn't issue (HR, the President or VP)
                 // sees it only while a report waits for them.
                 ($equipmentBadge = EquipmentDesk::canOpen($user)
                     ? EquipmentIssue::query()->handledBy($user)->where('status', EquipmentStatus::Requested)->count() + EquipmentDesk::incidentsToDecide($user)
                         + ($can(Ability::SetEquipmentPrices) ? EquipmentItem::needingPriceCount() : 0)
+                        + ($can(Ability::ManagePayroll) ? EquipmentIssue::query()->awaitingCharge()->count() : 0)
                     : 0) > 0 || $can(Ability::IssueEquipment) || $can(Ability::SetEquipmentPrices)
                     ? self::item('Equipment', 'equipment', 'package', badge: $equipmentBadge)
                     : null,

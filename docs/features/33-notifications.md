@@ -61,7 +61,8 @@ Last audited 2026-10-22, across all 172 Actions. The audit added the **New** row
 | Documents / radio NTC permits nearing expiry | Admin (+ Operation HQ for radios) | DocumentDueNotice, RadioPermitDue |
 | Reimbursement filed, approved (to pay) | the President or VP, Accounting | ReimbursementNotice |
 | A uniform saved without a price (for every size) | Accounting | UpdateNotice |
-| Equipment requested | Operations (Operation HQ + the region's Satellite) for a guard, Admin for office staff | UpdateNotice |
+| A uniform handed over: set its payslip charge | Accounting | UpdateNotice |
+| Equipment requested (one bell per cart, listing every item) | Operations (Operation HQ + the region's Satellite) for a guard, Admin for office staff | UpdateNotice |
 | Equipment damage or loss explained | whoever reported it, and the employee's head | UpdateNotice |
 | Payroll concern, complaint, resignation, referral, training request filed | the handlers | each one's notice |
 | Final pay to sign, returned, released | the signers, Accounting | FinalPayNotice |

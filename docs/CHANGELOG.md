@@ -4,6 +4,55 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Uniforms: Operations hands over, Accounting sets the charge (final)**
+- **The owner's question:** only Accounting should decide deductions, so why does the issuer type "Deduct per payslip"?
+- **Chosen:** Operations (or Admin for office staff) approves and hands the uniform over, with no money fields. Accounting then sets how much each payslip takes, and that is final (`SetUniformCharge`, ability `manage-payroll`). The guard then authorizes the deduction on My Payslips, and nothing is taken before that.
+- **Why this order:** the guard isn't kept waiting for a uniform they may need before their first duty, and the money stays with the people who see the whole payslip.
+- **Accounting's side:** a bell for each uniform handed over, a "Uniform charges to set" card on Equipment, and the badge counts them.
+- **Issuer's side:** their list shows "Charge not set yet (Accounting)" until it's done.
+- **Tests:** 23 equipment tests (985 in all) pass.
+
+**Shop: a cart icon on "Add to cart"**
+- **Add to cart** and the phone bar's **Review cart** now show a trolley (the new `cart` icon). Elsewhere **+** means "create something new" (Add item, Add radio), so it doesn't fit here. The quantity stepper keeps its − / +.
+
+**Sample pictures: proper line breaks**
+- **Before:** "Guard polo (Type A)" broke into "Guard polo (Type" / "A)", because the old line break counted characters.
+- **Now:** a name stays on one line when it fits. When it doesn't, it splits between words where the two lines come out most even, and the text shrinks if a line is still too wide. The text block is centred on the card.
+- **On the pilot:** after a backup, running the seeder again redrew the 10 pictures under new file names, so browsers fetch them instead of showing the cached ones. The old files were deleted. Only the drawn sample pictures are ever redrawn, never a photo Admin uploaded.
+
+**Shop: responsive cards (the owner: "it's not responsive")**
+- **The cause:** the shop sits beside the cart inside a page capped at 64rem, so on a wide screen it is only about 46rem wide. The screen-size rule still put three cards across, too narrow for the stepper and the button.
+- **Now:**
+  - Columns follow the space the shop itself has (Tailwind container queries, `@container` with `@lg:` / `@4xl:`): one column on a phone, two beside the cart, three when there's room.
+  - **Add to cart** has its own full-width row under the quantity stepper.
+  - Uniforms are listed first.
+  - On a phone or tablet, a bar fixed at the bottom of the screen shows "N items in your cart" and **Review cart** jumps to it, since the cart comes after every item there.
+- **Checked in a real browser this time:** Playwright on a throwaway seeded copy, at 1440, 900 and 390 px wide, in dark and light. No sideways scroll at any width. The throwaway database and its photos were deleted afterwards.
+- **Slip, caught by that check:** the first screenshots still showed one huge column, because I hadn't rebuilt the CSS after adding the new classes. Rebuilt, then checked again.
+
+**Shop cards: size chips and a quantity stepper**
+- **Before:** the dropdown and the narrow number box were cramped on a card (the owner's screenshot).
+- **Now:** every size is a chip you tap, and the selected one is highlighted the same way as the shift-hours chips. Quantity has a **− 1 +** stepper (1 to 5), with **Add to cart** beside it.
+- **How:** two small methods, `pickSize` and `pickQuantity`. The test now uses them.
+
+**Sample items for the equipment shop (pilot)**
+- `EquipmentSampleSeeder` adds 10 items whose names start with "SAMPLE ", each with a plain drawn picture:
+  - for guards: polo, trousers (waist 28–40), combat boots (38–46), cap, raincoat, flashlight and nightstick;
+  - for everyone: whistle and lanyard;
+  - for office staff: polo and ID lace.
+- The prices are my sample numbers, for looks only. Accounting can change them.
+- Running it again adds nothing. Picture names are random, because the dev database and the pilot share the storage folder.
+- The pilot was backed up first, then seeded (10 added). A test covers it.
+
+**Equipment shop: browse, cart, one request**
+- **My Equipment** now has a **Shop** tab: cards with photo, name, sizes and price; a cart (size and quantity per line, kept for the session); **Send request** sends the whole cart as one request. The issuers get one bell listing everything.
+- **Who sees what:** Admin marks each item for **Guards**, **Office staff** or **Everyone**. Guards see only guard items and shared ones. The rule is enforced on request and on issue, and the issue form offers only matching items.
+- **Photos:** Admin uploads one per item (JPG, PNG or WebP, up to 3 MB). It's kept private and shown only to signed-in staff; replacing it deletes the old file.
+- **Database, safe order:** the new columns (`audience`, `photo_path`) were added, backed up and migrated on dev and the pilot before any code read them.
+- **Tests:** 2 new (983 in all).
+- **Bug caught by a test:** after "I received it", the page jumped to the Shop tab because nothing was waiting any more. It now stays on My items.
+- **Not done this time:** a check in a real browser. The tests drive the pages, but I haven't looked at the cards' layout on a phone.
+
 **Equipment: sizes per item, and Accounting sets the prices**
 - **Sizes:** each item has its own sizes. Admin ticks standard ones (XS to 5XL, or All) or adds custom ones: `42`, `W32/L30`, `Free size`, several separated by commas, or a range like `38-45`. This replaces the "Comes in sizes (XS to 3XL)" tick; items that had it keep XS to 3XL.
 - **Prices are Accounting's** (new ability `set-equipment-prices`; the owner's choice): the item's price, plus an optional price for any size that costs more. Admin sees prices but can't change them.

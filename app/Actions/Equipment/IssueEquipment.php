@@ -2,10 +2,8 @@
 
 namespace App\Actions\Equipment;
 
-use App\Actions\Payroll\SaveEmployeeDeduction;
+use App\Enums\Ability;
 use App\Enums\AuditArea;
-use App\Enums\DeductionAuthorizationBasis;
-use App\Enums\DeductionType;
 use App\Enums\EquipmentKind;
 use App\Enums\EquipmentStatus;
 use App\Enums\RadioStatus;
@@ -17,14 +15,18 @@ use App\Notifications\UpdateNotice;
 use App\Services\AuditLogger;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Gives an item to someone: from the list, or a radio from the NTC masterlist; new, or
- * answering their request.
+ * answering their request. The issuer (Operations for guards, Admin for office staff) hands it
+ * over; money is not theirs to set.
  *
- *  - A uniform is charged (the owner's rule): its price becomes a deduction the employee must
- *    authorize on My Payslips (Labor Code Art. 113) before any payslip takes it.
+ *  - A uniform is charged (the owner's rule) at its price for that size. Accounting then sets
+ *    how much each payslip takes, and that's final (SetUniformCharge, the owner's choice
+ *    2026-10-23); the employee authorizes it on My Payslips (Labor Code Art. 113) before any
+ *    payslip takes it. Accounting is told here.
  *  - Anything else stays company property: they confirm on My Equipment that they received it
  *    and are accountable for it. Nothing is deducted unless it's later lost or damaged through
  *    their fault, decided after they were heard (DecideEquipmentIncident).
@@ -35,12 +37,9 @@ final class IssueEquipment
 {
     public const MAX_QUANTITY = 20;
 
-    public function __construct(
-        private readonly AuditLogger $audit,
-        private readonly SaveEmployeeDeduction $saveDeduction,
-    ) {}
+    public function __construct(private readonly AuditLogger $audit) {}
 
-    public function handle(User $issuer, User $employee, ?EquipmentItem $item, ?Radio $radio, ?string $size, int $quantity, ?float $installment, ?EquipmentIssue $request = null): EquipmentIssue
+    public function handle(User $issuer, User $employee, ?EquipmentItem $item, ?Radio $radio, ?string $size, int $quantity, ?EquipmentIssue $request = null): EquipmentIssue
     {
         if (! EquipmentIssue::canIssueTo($issuer, $employee)) {
             throw new AuthorizationException;
@@ -57,6 +56,10 @@ final class IssueEquipment
         if ($item !== null) {
             if (! $item->is_active) {
                 throw ValidationException::withMessages(['issueItem' => 'That item is no longer given out.']);
+            }
+
+            if (! $item->isFor($employee)) {
+                throw ValidationException::withMessages(['issueItem' => "That item is for {$item->audience->label()}."]);
             }
 
             $size = $item->hasSizes() ? $size : null;
@@ -85,11 +88,7 @@ final class IssueEquipment
             throw ValidationException::withMessages(['issueItem' => 'Accounting hasn\'t set this uniform\'s price'.($size ? " for size {$size}" : '').' yet.']);
         }
 
-        if ($charged && ($installment === null || $installment <= 0 || $installment > $total)) {
-            throw ValidationException::withMessages(['issueInstallment' => 'Per payslip: more than ₱0 and at most the total, ₱'.number_format($total, 2).'.']);
-        }
-
-        return DB::transaction(function () use ($issuer, $employee, $item, $radio, $size, $quantity, $installment, $request, $charged, $total, $unitPrice) {
+        return DB::transaction(function () use ($issuer, $employee, $item, $radio, $size, $quantity, $request, $charged, $total, $unitPrice) {
             $issue = $request ?? new EquipmentIssue;
             $label = $radio !== null ? "{$radio->brand} {$radio->model} radio (SN {$radio->serial_number})" : $item->name;
 
@@ -108,13 +107,6 @@ final class IssueEquipment
                 'issued_at' => now(),
             ])->save();
 
-            if ($charged) {
-                // Their authority to deduct, asked on My Payslips; nothing is taken until they give it.
-                $deduction = $this->saveDeduction->handle($employee, $issue->describe(), DeductionType::Uniform, (float) $installment, $total, $issuer, DeductionAuthorizationBasis::Employee);
-                $deduction->forceFill(['remaining_balance' => number_format($total, 2, '.', '')])->save();
-                $issue->forceFill(['employee_deduction_id' => $deduction->id])->save();
-            }
-
             if ($radio !== null) {
                 $radio->forceFill([
                     'status' => RadioStatus::InUse,
@@ -123,15 +115,22 @@ final class IssueEquipment
                 ])->save();
             }
 
-            $this->audit->record(AuditArea::Operations, 'equipment.issued', "Issued {$issue->describe()} to {$employee->name}".($charged ? ' (charged ₱'.number_format($total, 2).', authority to deduct asked)' : ''), $issue, [
-                'new' => ['charged' => $charged, 'total' => $charged ? $total : null, 'installment' => $charged ? $installment : null, 'from_request' => $request !== null],
+            $this->audit->record(AuditArea::Operations, 'equipment.issued', "Issued {$issue->describe()} to {$employee->name}".($charged ? ' (charged ₱'.number_format($total, 2).'; Accounting sets the payslip amount)' : ''), $issue, [
+                'new' => ['charged' => $charged, 'total' => $charged ? $total : null, 'from_request' => $request !== null],
             ], causer: $issuer);
 
-            UpdateNotice::tell($employee, $issuer, $charged ? 'Uniform issued: confirm and authorize' : 'Equipment issued: confirm you received it',
+            UpdateNotice::tell($employee, $issuer, $charged ? 'Uniform issued: confirm you received it' : 'Equipment issued: confirm you received it',
                 $issue->describe().($charged
-                    ? "\n₱".number_format($total, 2).', ₱'.number_format((float) $installment, 2).' per payslip once you authorize it on My Payslips. Confirm you received it on My Equipment.'
+                    ? "\n₱".number_format($total, 2).'. Accounting sets how much each payslip takes; you\'ll be asked to authorize it on My Payslips before anything is deducted. Confirm you received it on My Equipment.'
                     : "\nCompany property. Confirm on My Equipment that you received it."),
                 route('my-equipment'), 'package', email: true);
+
+            if ($charged) {
+                Notification::send(User::query()->notifiable(Ability::ManagePayroll->roles())->whereKeyNot($issuer->id)->get(), new UpdateNotice(
+                    "Uniform charge to set: {$employee->name}",
+                    "{$issue->describe()}, ₱".number_format($total, 2).". Issued by {$issuer->name}. Set how much each payslip takes.",
+                    route('equipment', ['show' => 'charges']), 'banknotes'));
+            }
 
             return $issue;
         });

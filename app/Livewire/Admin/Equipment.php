@@ -8,8 +8,11 @@ use App\Actions\Equipment\RejectEquipmentRequest;
 use App\Actions\Equipment\ReportEquipmentIncident;
 use App\Actions\Equipment\ReturnEquipment;
 use App\Actions\Equipment\SaveEquipmentItem;
+use App\Actions\Equipment\SetEquipmentItemPhoto;
 use App\Actions\Equipment\SetEquipmentItemPrices;
+use App\Actions\Equipment\SetUniformCharge;
 use App\Enums\Ability;
+use App\Enums\EquipmentAudience;
 use App\Enums\EquipmentIncidentKind;
 use App\Enums\EquipmentKind;
 use App\Enums\EquipmentStatus;
@@ -24,11 +27,14 @@ use App\Support\Heads;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 /**
  * The equipment desk. Issuers (Operations for guards, Admin for office staff): requests, what's
@@ -45,11 +51,13 @@ use Livewire\Component;
  * @property-read Collection<int, EquipmentItem> $activeItems
  * @property-read Collection<int, EquipmentItem> $allItems
  * @property-read Collection<int, Radio> $spareRadios
+ * @property-read Collection<int, EquipmentIssue> $pendingCharges
  */
 #[Title('Equipment')]
 class Equipment extends Component
 {
     use InteractsWithUser;
+    use WithFileUploads;
 
     /** requests | out | incidents | history */
     #[Url(as: 'show', except: '')]
@@ -75,7 +83,8 @@ class Equipment extends Component
 
     public string $issueQuantity = '1';
 
-    public string $issueInstallment = '';
+    /** @var array<int|string, string> Accounting: per payslip, by issue id */
+    public array $chargeInstallments = [];
 
     // Not approving a request
     public ?int $rejectingId = null;
@@ -111,6 +120,13 @@ class Equipment extends Component
 
     public string $itemKind = 'gear';
 
+    public string $itemAudience = 'all';
+
+    /** The photo being uploaded for the item (shown in the shop). */
+    public mixed $itemPhoto = null;
+
+    public bool $removeItemPhoto = false;
+
     /** @var list<string> the sizes ticked or added, in order */
     public array $itemSizes = [];
 
@@ -128,7 +144,7 @@ class Equipment extends Component
 
     public static function canOpen(User $user): bool
     {
-        return $user->can(Ability::IssueEquipment->value) || Heads::headsOfficeStaff($user) || $user->can(Ability::SetEquipmentPrices->value);
+        return $user->can(Ability::IssueEquipment->value) || Heads::headsOfficeStaff($user) || $user->can(Ability::SetEquipmentPrices->value) || $user->can(Ability::ManagePayroll->value);
     }
 
     /** Issues, or decides damage and loss: sees the desk. Accounting alone sees only the item list. */
@@ -187,8 +203,7 @@ class Equipment extends Component
             'issueItemId' => [Rule::requiredIf($this->issueKind === 'item'), 'nullable', 'integer', 'exists:equipment_items,id'],
             'issueRadioId' => [Rule::requiredIf($this->issueKind === 'radio'), 'nullable', 'integer', 'exists:radios,id'],
             'issueQuantity' => ['required', 'integer', 'min:1', 'max:'.IssueEquipment::MAX_QUANTITY],
-            'issueInstallment' => ['nullable', 'numeric', 'min:0.01', 'max:999999'],
-        ], [], ['issueToId' => 'person', 'issueItemId' => 'item', 'issueRadioId' => 'radio', 'issueQuantity' => 'quantity', 'issueInstallment' => 'per payslip']);
+        ], [], ['issueToId' => 'person', 'issueItemId' => 'item', 'issueRadioId' => 'radio', 'issueQuantity' => 'quantity']);
 
         $item = $this->issueKind === 'item' ? EquipmentItem::query()->findOrFail((int) $this->issueItemId) : null;
         $radio = $this->issueKind === 'radio' ? Radio::query()->findOrFail((int) $this->issueRadioId) : null;
@@ -200,13 +215,14 @@ class Equipment extends Component
             $radio,
             filled($this->issueSize) ? $this->issueSize : null,
             (int) $this->issueQuantity,
-            filled($this->issueInstallment) ? (float) $this->issueInstallment : null,
             $this->fromRequestId !== null ? $this->handledIssue($this->fromRequestId) : null,
         );
 
         $this->resetIssue();
         $this->forget();
-        $this->dispatch('notify', message: 'Issued. They confirm receipt on My Equipment.');
+        $this->dispatch('notify', message: $item?->kind === EquipmentKind::Uniform
+            ? 'Issued. Accounting sets the payslip amount; they confirm receipt on My Equipment.'
+            : 'Issued. They confirm receipt on My Equipment.');
     }
 
     public function cancelIssue(): void
@@ -216,7 +232,7 @@ class Equipment extends Component
 
     private function resetIssue(): void
     {
-        $this->reset(['issuing', 'fromRequestId', 'issueToId', 'issueKind', 'issueItemId', 'issueRadioId', 'issueSize', 'issueQuantity', 'issueInstallment']);
+        $this->reset(['issuing', 'fromRequestId', 'issueToId', 'issueKind', 'issueItemId', 'issueRadioId', 'issueSize', 'issueQuantity']);
         $this->resetErrorBag();
     }
 
@@ -328,6 +344,7 @@ class Equipment extends Component
             $this->editingItemId = $item->id;
             $this->itemName = $item->name;
             $this->itemKind = $item->kind->value;
+            $this->itemAudience = $item->audience->value;
             $this->itemSizes = $item->sizeList();
             $this->itemActive = $item->is_active;
         }
@@ -374,15 +391,23 @@ class Equipment extends Component
         $this->itemSizes = array_values(array_diff($this->itemSizes, [$size]));
     }
 
-    public function saveItem(SaveEquipmentItem $save): void
+    public function saveItem(SaveEquipmentItem $save, SetEquipmentItemPhoto $setPhoto): void
     {
         $this->validate([
             'itemName' => ['required', 'string', 'max:80'],
             'itemKind' => ['required', Rule::enum(EquipmentKind::class)],
-        ], [], ['itemName' => 'name']);
+            'itemAudience' => ['required', Rule::enum(EquipmentAudience::class)],
+            'itemPhoto' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:3072'],
+        ], ['itemPhoto.max' => 'The photo may be at most 3 MB.'], ['itemName' => 'name', 'itemPhoto' => 'photo']);
 
-        $save->handle($this->editingItemId !== null ? EquipmentItem::query()->findOrFail($this->editingItemId) : null,
-            $this->itemName, EquipmentKind::from($this->itemKind), $this->itemSizes, $this->itemActive, $this->currentUser());
+        $item = $save->handle($this->editingItemId !== null ? EquipmentItem::query()->findOrFail($this->editingItemId) : null,
+            $this->itemName, EquipmentKind::from($this->itemKind), $this->itemSizes, $this->itemActive, $this->currentUser(), EquipmentAudience::from($this->itemAudience));
+
+        if ($this->itemPhoto instanceof UploadedFile) {
+            $setPhoto->handle($item, $this->itemPhoto, $this->currentUser());
+        } elseif ($this->removeItemPhoto && $item->photo_path !== null) {
+            $setPhoto->handle($item, null, $this->currentUser());
+        }
 
         $this->cancelItem();
         unset($this->allItems, $this->activeItems);
@@ -391,7 +416,57 @@ class Equipment extends Component
 
     public function cancelItem(): void
     {
-        $this->reset(['itemFormOpen', 'editingItemId', 'itemName', 'itemKind', 'itemSizes', 'customSize', 'itemActive']);
+        $this->reset(['itemFormOpen', 'editingItemId', 'itemName', 'itemKind', 'itemAudience', 'itemPhoto', 'removeItemPhoto', 'itemSizes', 'customSize', 'itemActive']);
+    }
+
+    /**
+     * The items the person being issued to may get (guards: guard items and shared ones).
+     *
+     * @return Collection<int, EquipmentItem>
+     */
+    public function issuableItems(): Collection
+    {
+        $person = filled($this->issueToId) ? User::query()->with('employeeProfile')->find((int) $this->issueToId) : null;
+
+        return $person === null ? $this->activeItems : $this->activeItems->filter(fn (EquipmentItem $item) => $item->isFor($person))->values();
+    }
+
+    // ---- Uniform charges (Accounting) ----
+
+    public function setCharge(int $id, SetUniformCharge $setCharge): void
+    {
+        abort_unless($this->currentUser()->can(Ability::ManagePayroll->value), 403);
+
+        $amount = $this->chargeInstallments[$id] ?? '';
+        $this->resetErrorBag("chargeInstallments.{$id}");
+
+        if (! is_numeric($amount) || (float) $amount <= 0) {
+            $this->addError("chargeInstallments.{$id}", 'Enter how much each payslip takes.');
+
+            return;
+        }
+
+        try {
+            $setCharge->handle($this->currentUser(), EquipmentIssue::query()->awaitingCharge()->findOrFail($id), (float) $amount);
+        } catch (ValidationException $e) {
+            $this->addError("chargeInstallments.{$id}", (string) collect($e->errors())->flatten()->first());
+
+            return;
+        }
+
+        unset($this->chargeInstallments[$id], $this->pendingCharges);
+        $this->dispatch('notify', message: 'Charge set. They\'re asked to authorize it on My Payslips.');
+    }
+
+    /**
+     * Uniforms handed over whose payslip amount Accounting still has to set, oldest first.
+     *
+     * @return Collection<int, EquipmentIssue>
+     */
+    #[Computed]
+    public function pendingCharges(): Collection
+    {
+        return EquipmentIssue::query()->awaitingCharge()->with(['user', 'issuer'])->orderBy('issued_at')->get();
     }
 
     // ---- Prices (Accounting) ----

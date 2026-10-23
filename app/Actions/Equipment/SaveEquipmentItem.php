@@ -4,6 +4,7 @@ namespace App\Actions\Equipment;
 
 use App\Enums\Ability;
 use App\Enums\AuditArea;
+use App\Enums\EquipmentAudience;
 use App\Enums\EquipmentKind;
 use App\Models\EquipmentItem;
 use App\Models\User;
@@ -16,8 +17,8 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Adds or edits an item on the equipment list (Admin): its name, whether it's a uniform
- * (charged) or company property, the sizes it comes in (standard or custom), and whether it's
- * still given out. Prices are Accounting's (SetEquipmentItemPrices): a size kept keeps its
+ * (charged) or company property, who it's for in the shop (guards, office staff, everyone),
+ * the sizes it comes in (standard or custom), and whether it's still given out. Prices are Accounting's (SetEquipmentItemPrices): a size kept keeps its
  * price; a new one starts at the item's price. An item no longer given out is switched off,
  * not deleted, so past records keep it. Audited with the changes.
  */
@@ -31,7 +32,7 @@ final class SaveEquipmentItem
     /**
      * @param  list<string>  $sizes
      */
-    public function handle(?EquipmentItem $item, string $name, EquipmentKind $kind, array $sizes, bool $isActive, User $actor): EquipmentItem
+    public function handle(?EquipmentItem $item, string $name, EquipmentKind $kind, array $sizes, bool $isActive, User $actor, EquipmentAudience $audience = EquipmentAudience::All): EquipmentItem
     {
         if (! $actor->can(Ability::ManageEquipmentItems->value)) {
             throw new AuthorizationException;
@@ -45,10 +46,10 @@ final class SaveEquipmentItem
 
         $sizes = self::cleanSizes($sizes);
 
-        return DB::transaction(function () use ($item, $name, $kind, $sizes, $isActive, $actor) {
+        return DB::transaction(function () use ($item, $name, $kind, $sizes, $isActive, $actor, $audience) {
             $isNew = $item === null;
             $item ??= new EquipmentItem;
-            $snapshot = fn (EquipmentItem $i) => ['name' => $i->name, 'kind' => $i->kind->value, 'sizes' => implode(', ', $i->sizeList()), 'is_active' => $i->is_active];
+            $snapshot = fn (EquipmentItem $i) => ['name' => $i->name, 'kind' => $i->kind->value, 'audience' => $i->audience->value, 'sizes' => implode(', ', $i->sizeList()), 'is_active' => $i->is_active];
             $before = $isNew ? [] : $snapshot($item);
 
             // A size kept keeps its own price.
@@ -56,6 +57,7 @@ final class SaveEquipmentItem
             $item->forceFill([
                 'name' => $name,
                 'kind' => $kind,
+                'audience' => $audience,
                 'sizes' => $sizes === [] ? null : array_map(fn (string $size) => ['size' => $size, 'price' => $kept->get($size)['price'] ?? null], $sizes),
                 'is_active' => $isActive,
             ])->save();

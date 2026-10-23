@@ -139,6 +139,16 @@ class EquipmentIssue extends Model
         $query->where('status', EquipmentStatus::Issued)->where('charged', false);
     }
 
+    /**
+     * A uniform handed over whose charge Accounting hasn't set yet (SetUniformCharge).
+     *
+     * @param  Builder<EquipmentIssue>  $query
+     */
+    public function scopeAwaitingCharge(Builder $query): void
+    {
+        $query->where('charged', true)->whereNull('employee_deduction_id')->where('status', EquipmentStatus::Issued);
+    }
+
     public function isCompanyProperty(): bool
     {
         return ! $this->charged;

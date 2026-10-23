@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\EquipmentAudience;
 use App\Enums\EquipmentKind;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -17,8 +18,10 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $id
  * @property string $name
  * @property EquipmentKind $kind
+ * @property EquipmentAudience $audience who sees it in the shop and can be issued it
  * @property string|null $unit_price the item's price; a size may have its own
  * @property list<array{size: string, price: float|null}>|null $sizes
+ * @property string|null $photo_path on the private photo disk; served by ShowEquipmentPhotoController
  * @property bool $is_active
  * @property CarbonImmutable $created_at
  * @property CarbonImmutable $updated_at
@@ -35,6 +38,7 @@ class EquipmentItem extends Model
      */
     protected $attributes = [
         'is_active' => true,
+        'audience' => 'all',
     ];
 
     /**
@@ -44,6 +48,7 @@ class EquipmentItem extends Model
     {
         return [
             'kind' => EquipmentKind::class,
+            'audience' => EquipmentAudience::class,
             'unit_price' => 'decimal:2',
             'sizes' => 'array',
             'is_active' => 'boolean',
@@ -56,6 +61,35 @@ class EquipmentItem extends Model
     public function scopeActive(Builder $query): void
     {
         $query->where('is_active', true);
+    }
+
+    /**
+     * The items this person sees in the shop (and can be issued): guards get guard items and
+     * shared ones; office staff, office items and shared ones.
+     *
+     * @param  Builder<EquipmentItem>  $query
+     */
+    public function scopeFor(Builder $query, User $person): void
+    {
+        $query->whereIn('audience', array_map(fn (EquipmentAudience $audience) => $audience->value,
+            array_filter(EquipmentAudience::cases(), fn (EquipmentAudience $audience) => $audience->includes(self::isOfficeSide($person)))));
+    }
+
+    public function isFor(User $person): bool
+    {
+        return $this->audience->includes(self::isOfficeSide($person));
+    }
+
+    /** No deployment record counts as office (as everywhere else, User::isOfficeStaff). */
+    private static function isOfficeSide(User $person): bool
+    {
+        return $person->isOfficeStaff();
+    }
+
+    /** The photo's URL, with a version so a new photo isn't served from the browser's cache. */
+    public function photoUrl(): ?string
+    {
+        return $this->photo_path === null ? null : route('equipment.photo', ['item' => $this->id, 'v' => hash('xxh3', $this->photo_path)]);
     }
 
     /**
