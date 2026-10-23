@@ -11,7 +11,7 @@ use Illuminate\Notifications\Notification;
 
 /**
  * A missed patrol round, or someone away too long or silent: bell and email,
- * to Operations for guards and to the President or Vice President for office staff.
+ * to Operations for guards and to an office staffer's head (App\Support\Heads).
  */
 final class PatrolAlert extends Notification implements ShouldQueue
 {

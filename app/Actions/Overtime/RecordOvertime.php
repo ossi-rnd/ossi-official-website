@@ -30,7 +30,7 @@ final class RecordOvertime
         $refusal = match (true) {
             ! $recorder->can(Ability::ReviewOvertime->value) => 'Only Operations, HR or Admin add a guard\'s extra time.',
             $guard->id === $recorder->id => 'You cannot add extra time for yourself.',
-            $guard->isOfficeStaff() => 'Office staff\'s overtime is approved by the President or Vice President: they ask for it on My Overtime.',
+            $guard->isOfficeStaff() => 'Office staff ask their head for overtime on My Overtime.',
             ! $recorder->canSeeEmployee($guard) => 'This guard is outside your region.',
             $date->isAfter(today()) => 'Extra time is added once it\'s worked: choose today or an earlier date.',
             $minutes < 15 || $minutes > 12 * 60 => 'Extra time is from 15 minutes to 12 hours.',

@@ -4,6 +4,17 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-22
 
+**One chain of heads for everything (`App\Support\Heads`)**
+- The owner's chain now drives every "who supervises whom":
+  - **The chain:** a guard → Operation HQ + their region's Satellite; HR → President / VP; Satellite → Operation HQ; other office staff (Admin, Accounting, Operation HQ…) → HR.
+  - **Before**, all office staff's leave, overtime and time away went to the President or VP. Now the **head decides**: HR decides Admin, Accounting and Operation HQ's leave and overtime; Operation HQ decides a Satellite's (no endorsing on to HR, as for a guard); the President or VP decides HR's. The President or VP still see every office staffer's requests and time away (they monitor), in a tab marked "HR staff's are yours to decide".
+  - **Time away:** Office Away is open to HR and Operation HQ for the people they head. Only the head approves, and time-away alerts go to the head.
+  - **Notices to Explain and merits:** a Satellite's are issued by Operation HQ, not HR. HR still reads them.
+  - **Visibility:** Operation HQ, otherwise guards-only, now also sees the Satellites it heads (their records, requests and notices).
+  - **Lists:** Leave / Overtime Requests show **Office staff / Guards** tabs to HR and Operation HQ too (guards' tab first for them), and each screen names the head: "Their head decides it: HR.", "Goes to HR automatically", "Location shared with HR".
+- **Code:** one class answers "who heads this person" (`Heads::of`, `label`) and "does X head Y" (`isHeadOf`). `LeaveRouting`, `RoutedByStaffKind`, `ReviewLeaveRequest`, `ReviewOvertimeRequest`, `SubmitOvertimeRequest`, `ApproveAway`, `AwayMonitor`, `SendPatrolAlerts`, `CloseForgottenAways`, `NoticeToExplain::canIssue`, `MeritRecord::canGive` and `SendAttendanceAlerts` all use it. `NotifyExecutives` is gone. New test `HeadsTest`; tests that checked the old rule were updated to the new one (917 pass).
+- **Slip, caught and fixed:** a helper script that couldn't find where to add an import still rewrote `NoticeToExplain.php`, and PowerShell garbled its "·" into "Â·". A test caught it ("No explanation Â· to decide"). The file was repaired exactly, and `git diff` confirmed only the intended lines changed.
+
 **Attendance alerts go to the person's own head (the owner's chain)**
 - A missed clock-out, and an office staffer who hasn't clocked in, now alert the person's actual head (`SendAttendanceAlerts::headsOf`):
   - **HR** → the President or VP

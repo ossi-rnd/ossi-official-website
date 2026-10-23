@@ -22,7 +22,7 @@ use Livewire\WithPagination;
 
 /**
  * Guards' leave climbs Satellite Operation → Operation HQ → HR (final);
- * office staff's goes to the President or Vice President. Each viewer gets the button for their
+ * office staff's goes to their head (App\Support\Heads). Each viewer gets the button for their
  * step: Endorse, Review, or a "waiting for…" note.
  *
  * @property-read LengthAwarePaginator<int, LeaveRequest> $requests

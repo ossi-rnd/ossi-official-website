@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\Notification;
 /**
  * Who a leave request goes to next.
  *
- *   office staff → Executive (decides)
+ *   office staff → their head, who decides (Heads): HR for Admin, Accounting, Operation HQ…;
+ *                  Operation HQ for a Satellite; the President or VP (stage "Executive") for HR
  *   guard        → Satellite Operation of the guard's region (endorses)
  *                → Operation HQ (endorses)
  *                → HR (decides, final)
@@ -27,8 +28,13 @@ final class LeaveRouting
 {
     public static function firstStage(User $requester, ?LeaveType $type = null): LeaveStage
     {
+        // Office staff: straight to their head, who decides (Heads).
         if ($requester->isOfficeStaff()) {
-            return LeaveStage::Executive;
+            return match (Heads::groupOf($requester)) {
+                Heads::LEADERSHIP => LeaveStage::Executive,
+                Heads::OPERATIONS_HQ => LeaveStage::OperationsHq,
+                default => LeaveStage::Hr,
+            };
         }
 
         // Confidential (VAWC, RA 9262): straight to HR, who decides; no endorsers see it.

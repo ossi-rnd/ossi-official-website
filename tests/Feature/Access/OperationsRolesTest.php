@@ -56,19 +56,23 @@ function satellite(Region $region): User
 }
 
 describe('leave approvers', function () {
-    it('has HR approve guards\' leave, but not office staff\'s', function () {
+    it('has HR approve guards\' leave and the office staff it heads, but not another HR member\'s', function () {
         $hr = staff(Role::Hr);
         $guardLeave = leaveOf(employee());
         $officeLeave = leaveOf(staff(Role::Accounting));
+        $hrColleagueLeave = leaveOf(staff(Role::Hr));
 
-        // Office staff's leave goes to the Executive only: HR doesn't even see it.
+        // HR heads Accounting (App\Support\Heads); an HR member's leave is the President or VP's.
         Livewire::actingAs($hr)->test(LeaveRequests::class)
-            ->assertSee($guardLeave->user->name)->assertDontSee($officeLeave->user->name)
+            ->assertSee($guardLeave->user->name)
             ->call('startReview', $guardLeave->id)->call('approve')->assertHasNoErrors()
-            ->call('startReview', $officeLeave->id)->assertNotFound();
+            ->call('showGroup', 'office')->assertSee($officeLeave->user->name)->assertDontSee($hrColleagueLeave->user->name)
+            ->call('startReview', $officeLeave->id)->call('approve')->assertHasNoErrors()
+            ->call('startReview', $hrColleagueLeave->id)->assertNotFound();
 
         expect($guardLeave->fresh()?->status)->toBe(RequestStatus::Approved)
-            ->and($officeLeave->fresh()?->status)->toBe(RequestStatus::Pending);
+            ->and($officeLeave->fresh()?->status)->toBe(RequestStatus::Approved)
+            ->and($hrColleagueLeave->fresh()?->status)->toBe(RequestStatus::Pending);
     });
 
     it('has the Executive approve office staff\'s leave, but not guards\'', function () {
@@ -88,14 +92,14 @@ describe('leave approvers', function () {
             ->and($guardLeave->fresh()?->status)->toBe(RequestStatus::Pending);
     });
 
-    it('lets Operation HQ see leave requests but decide none', function () {
+    it('lets Operation HQ endorse guards\' leave without deciding it', function () {
         $rico = employee();
         $rico->forceFill(['name' => 'Rico Guard'])->save();
         leaveOf($rico);
 
+        // A guard's leave: Operation HQ endorses it on to HR, never decides it (no Review button).
         Livewire::actingAs(staff(Role::OperationsHq))->test(LeaveRequests::class)
             ->assertSee('Rico Guard')
-            ->assertDontSee('yours to decide') // only guards' requests: no tabs
             ->assertDontSeeHtml('wire:click="startReview');
     });
 });

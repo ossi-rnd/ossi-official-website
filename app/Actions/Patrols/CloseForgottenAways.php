@@ -2,14 +2,13 @@
 
 namespace App\Actions\Patrols;
 
-use App\Enums\Ability;
 use App\Enums\AuditArea;
-use App\Enums\Role;
 use App\Models\AwayLog;
 use App\Models\Shift;
 use App\Models\User;
 use App\Notifications\PatrolAlert;
 use App\Services\AuditLogger;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -69,23 +68,16 @@ final class CloseForgottenAways
     }
 
     /**
-     * The same people who get the other time-away alerts: the President or Vice President for
-     * office staff; Operation HQ and the region's Satellite Operation for guards.
+     * The same people who get the other time-away alerts: the person's head (Heads): their
+     * office head for office staff; Operation HQ and the region's Satellite for a guard.
      *
      * @return array{0: Collection<int, User>, 1: string}
      */
     private function supervisors(AwayLog $away): array
     {
-        if ($away->user->employeeProfile->is_office_staff ?? true) {
-            return [User::query()->notifiable(Ability::MonitorOfficeAway->roles())->get(), route('office-away')];
-        }
+        $office = $away->user->employeeProfile->is_office_staff ?? true;
 
-        $region = $away->timeLog->dutyAssignment?->client?->region;
-        $operations = User::query()->notifiable([Role::OperationsHq, Role::SatelliteOperations])->with('roles')->get()
-            ->filter(fn (User $user) => $user->hasRole(Role::OperationsHq) || ($region !== null && $user->operations_region === $region))
-            ->values();
-
-        return [$operations, route('patrols')];
+        return [Heads::of($away->user, $away->timeLog->dutyAssignment?->client), route($office ? 'office-away' : 'patrols')];
     }
 
     /** When the duty the absence belongs to was scheduled to end. */

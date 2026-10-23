@@ -109,7 +109,9 @@ enum Ability: string
             // Checkpoints, patrol rounds and guards away from the post (Satellite: its region).
             self::ManagePatrols => [Role::OperationsHq, Role::SatelliteOperations, Role::SuperAdmin],
             // Office staff out of the office: the President or Vice President, like their leave.
-            self::MonitorOfficeAway => [...Role::leadership(), Role::SuperAdmin],
+            // HR for the office staff it heads, Operation HQ for its Satellites (App\Support\Heads);
+            // the President or VP see everyone's (and approve HR's).
+            self::MonitorOfficeAway => [...Role::leadership(), Role::Hr, Role::OperationsHq, Role::SuperAdmin],
             // Company documents, licenses and client / legal documents.
             self::ManageDocuments => [Role::Admin, Role::SuperAdmin],
             self::ManageTraining => [Role::Admin, Role::SuperAdmin],

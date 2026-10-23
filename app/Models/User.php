@@ -273,7 +273,9 @@ class User extends Authenticatable implements MustVerifyEmail
         if ($viewer->isRegionallyLimited()) {
             $query->whereHas('employeeProfile', fn (Builder $profile) => $profile->visibleTo($viewer));
         } elseif (! $viewer->can(Ability::ViewOfficeStaff->value)) {
-            $query->fieldStaff();
+            // Guards, and for Operation HQ also the Satellite Operations it heads (Heads).
+            $query->where(fn (Builder $who) => $who->whereHas('employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false))
+                ->when($viewer->hasRole(Role::OperationsHq), fn (Builder $who) => $who->orWhereHas('roles', fn (Builder $roles) => $roles->where('role', Role::SatelliteOperations->value))));
         }
     }
 
@@ -311,8 +313,9 @@ class User extends Authenticatable implements MustVerifyEmail
     public function canSeeProfile(?EmployeeProfile $profile): bool
     {
         if (! $this->isRegionallyLimited()) {
-            // Operation HQ (no view-office-staff): guards only.
-            return $profile === null || ! $profile->is_office_staff || $this->can(Ability::ViewOfficeStaff->value);
+            // Operation HQ (no view-office-staff): guards, and the Satellite Operations it heads.
+            return $profile === null || ! $profile->is_office_staff || $this->can(Ability::ViewOfficeStaff->value)
+                || ($this->hasRole(Role::OperationsHq) && $profile->user_id !== null && UserRole::query()->where('user_id', $profile->user_id)->where('role', Role::SatelliteOperations)->exists());
         }
 
         $profile?->loadMissing('client');

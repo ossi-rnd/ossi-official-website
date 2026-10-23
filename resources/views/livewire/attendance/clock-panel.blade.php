@@ -132,7 +132,7 @@
                         $locationDue = $this->away->isLocationDue($now);
                         $silent = $this->away->isLocationOverdue($now);
                         $every = (int) config('attendance.away.location_update_minutes');
-                        $boss = $isOffice ? 'the President or Vice President' : 'Operations';
+                        $boss = \App\Support\Heads::label(auth()->user());
                     @endphp
                     {{-- Re-checks every minute, so the "share your location" reminder appears on time. --}}
                     <div wire:poll.60s class="hidden"></div>

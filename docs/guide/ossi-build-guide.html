@@ -589,7 +589,7 @@ sequenceDiagram
     <div><b>One region</b><span>Satellite has <code>users.operations_region</code>. <code>visibleTo($viewer)</code> scopes lists; <code>canSeeProfile()</code> guards single records and Actions.</span></div>
     <div><b>Operations: guards only</b><span>The same rule also hides office staff from anyone without <code>view-office-staff</code>, which means Operation HQ (a Satellite sees only its region's guards anyway). Operations looks after guards, and office staff answer to the President or Vice President. So the Employees list and its filter, the Attendance Log, and a record opened by its link all follow one rule.</span></div>
   </div>
-  <details class="file" open><summary>app/Enums/Ability.php<span class="lines">183 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Enums/Ability.php<span class="lines">185 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Enums;
 
@@ -700,7 +700,9 @@ sequenceDiagram
             <span class="c">// Checkpoints, patrol rounds and guards away from the post (Satellite: its region).</span>
             self::ManagePatrols =&gt; [Role::OperationsHq, Role::SatelliteOperations, Role::SuperAdmin],
             <span class="c">// Office staff out of the office: the President or Vice President, like their leave.</span>
-            self::MonitorOfficeAway =&gt; [...Role::<span class="f">leadership</span>(), Role::SuperAdmin],
+            <span class="c">// HR for the office staff it heads, Operation HQ for its Satellites (App\Support\Heads);</span>
+            <span class="c">// the President or VP see everyone&#039;s (and approve HR&#039;s).</span>
+            self::MonitorOfficeAway =&gt; [...Role::<span class="f">leadership</span>(), Role::Hr, Role::OperationsHq, Role::SuperAdmin],
             <span class="c">// Company documents, licenses and client / legal documents.</span>
             self::ManageDocuments =&gt; [Role::Admin, Role::SuperAdmin],
             self::ManageTraining =&gt; [Role::Admin, Role::SuperAdmin],
@@ -897,7 +899,7 @@ sequenceDiagram
     <span class="c">/** &quot;the President or Vice President&quot;: how the screens name who decides. */</span>
     <span class="k">public</span> <span class="k">const</span> LEADERSHIP_LABEL = <span class="s">&#039;the President or Vice President&#039;</span>;
 }</code></pre></details>
-  <details class="file"><summary>app/Actions/Leave/ReviewLeaveRequest.php<span class="lines">117 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/Leave/ReviewLeaveRequest.php<span class="lines">110 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Leave;
 
@@ -908,6 +910,7 @@ sequenceDiagram
 <span class="k">use</span> App\Models\User;
 <span class="k">use</span> App\Notifications\RequestDecided;
 <span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Illuminate\Support\Facades\DB;
 <span class="k">use</span> Illuminate\Validation\ValidationException;
 <span class="k">use</span> InvalidArgumentException;
@@ -915,36 +918,28 @@ sequenceDiagram
 <span class="c">/**
  * Who decides depends on who&#039;s asking: HR decides guards&#039; leave (final),
  * once the region&#039;s Satellite Operation and Operation HQ have endorsed it
- * (EndorseLeaveRequest); the President or Vice President decides office staff&#039;s.
+ * (EndorseLeaveRequest); an office staffer&#039;s head decides theirs (Heads: HR for Admin,
+ * Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR).
  */</span>
 <span class="k">final</span> <span class="k">class</span> ReviewLeaveRequest
 {
     <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(<span class="k">private</span> <span class="k">readonly</span> AuditLogger $audit) {}
 
     <span class="c">/**
-     * The gate for deciding this request. No HR profile (e.g. a Super Admin&#039;s
-     * own account) counts as office staff.
-     */</span>
-    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">requiredAbility</span>(LeaveRequest $leaveRequest): Ability
-    {
-        $leaveRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user.employeeProfile&#039;</span>);
-
-        <span class="k">return</span> LeaveRequest::<span class="f">reviewAbilityFor</span>($leaveRequest-&gt;user);
-    }
-
-    <span class="c">/**
-     * Why this reviewer can&#039;t decide it, or null when they can. The list shows
-     * the same text in place of the Review button.
+     * Why this reviewer can&#039;t decide it, or null when they can. The list shows the same text
+     * in place of the Review button. A guard&#039;s: HR, once Operations has endorsed it. An office
+     * staffer&#039;s: their head (Heads). No HR profile (e.g. a Super Admin&#039;s own account) counts
+     * as office staff.
      */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">blockedReason</span>(LeaveRequest $leaveRequest, User $reviewer): ?string
     {
-        $office = self::<span class="f">requiredAbility</span>($leaveRequest) === Ability::ReviewOfficeLeave;
+        $leaveRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user.employeeProfile&#039;</span>);
+        $office = $leaveRequest-&gt;user-&gt;<span class="f">isOfficeStaff</span>();
 
         <span class="k">return</span> <span class="k">match</span> (<span class="k">true</span>) {
             $leaveRequest-&gt;user_id === $reviewer-&gt;id =&gt; <span class="s">&#039;You cannot review your own request.&#039;</span>,
-            ! $reviewer-&gt;<span class="f">can</span>(self::<span class="f">requiredAbility</span>($leaveRequest)-&gt;value) =&gt; $office
-                ? <span class="s">&#039;Office staff leave is approved by the President or Vice President.&#039;</span>
-                : <span class="s">&#039;Guards\&#039; leave is approved by HR.&#039;</span>,
+            $office &amp;&amp; ! Heads::<span class="f">isHeadOf</span>($reviewer, $leaveRequest-&gt;user) =&gt; <span class="s">&#039;Their head decides it: &#039;</span>.Heads::<span class="f">label</span>($leaveRequest-&gt;user).<span class="s">&#039;.&#039;</span>,
+            ! $office &amp;&amp; ! $reviewer-&gt;<span class="f">can</span>(Ability::ReviewFieldLeave-&gt;value) =&gt; <span class="s">&#039;Guards\&#039; leave is approved by HR.&#039;</span>,
             <span class="c">// A guard&#039;s leave reaches HR only once Operation HQ has endorsed it.</span>
             ! $office &amp;&amp; $leaveRequest-&gt;stage !== <span class="k">null</span> &amp;&amp; $leaveRequest-&gt;stage-&gt;<span class="f">endorses</span>() =&gt; <span class="s">&quot;Waiting for {$leaveRequest-&gt;stage-&gt;label()} to endorse it.&quot;</span>,
             ! $reviewer-&gt;<span class="f">canSeeEmployee</span>($leaveRequest-&gt;user) =&gt; <span class="s">&#039;This employee is outside your region.&#039;</span>,
@@ -1113,7 +1108,7 @@ sequenceDiagram
         });
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Support/Navigation.php<span class="lines">157 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Support/Navigation.php<span class="lines">158 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Support;
 
@@ -1191,7 +1186,8 @@ sequenceDiagram
                 $<span class="f">can</span>(Ability::ManageOffices) ? self::<span class="f">item</span>(<span class="s">&#039;OSSI Offices&#039;</span>, <span class="s">&#039;offices&#039;</span>, <span class="s">&#039;building&#039;</span>) : <span class="k">null</span>,
                 $<span class="f">can</span>(Ability::ManageRoster) ? self::<span class="f">item</span>(<span class="s">&#039;Duty Roster&#039;</span>, <span class="s">&#039;roster&#039;</span>, <span class="s">&#039;calendar&#039;</span>) : <span class="k">null</span>,
                 $<span class="f">can</span>(Ability::ManagePatrols) ? self::<span class="f">item</span>(<span class="s">&#039;Patrols&#039;</span>, <span class="s">&#039;patrols&#039;</span>, <span class="s">&#039;shield&#039;</span>, badge: AwayLog::<span class="f">query</span>()-&gt;<span class="f">open</span>()-&gt;<span class="f">whereHas</span>(<span class="s">&#039;user&#039;</span>, <span class="k">fn</span> ($query) =&gt; $query-&gt;<span class="f">visibleTo</span>($user)-&gt;<span class="f">whereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> ($profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)))-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
-                $<span class="f">can</span>(Ability::MonitorOfficeAway) ? self::<span class="f">item</span>(<span class="s">&#039;Office Away&#039;</span>, <span class="s">&#039;office-away&#039;</span>, <span class="s">&#039;map-pin&#039;</span>, badge: AwayLog::<span class="f">query</span>()-&gt;<span class="f">open</span>()-&gt;<span class="f">whereHas</span>(<span class="s">&#039;user&#039;</span>, <span class="k">fn</span> ($query) =&gt; $query-&gt;<span class="f">where</span>(<span class="k">fn</span> ($who) =&gt; $who-&gt;<span class="f">whereDoesntHave</span>(<span class="s">&#039;employeeProfile&#039;</span>)-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> ($profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">true</span>))))-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
+                <span class="c">// Badge: office staff away right now, among those this viewer heads (all for the President or VP).</span>
+                $<span class="f">can</span>(Ability::MonitorOfficeAway) ? self::<span class="f">item</span>(<span class="s">&#039;Office Away&#039;</span>, <span class="s">&#039;office-away&#039;</span>, <span class="s">&#039;map-pin&#039;</span>, badge: AwayLog::<span class="f">query</span>()-&gt;<span class="f">open</span>()-&gt;<span class="f">whereHas</span>(<span class="s">&#039;user&#039;</span>, <span class="k">fn</span> ($query) =&gt; Heads::<span class="f">seesAllOfficeStaff</span>($user) ? $query-&gt;<span class="f">officeStaff</span>() : Heads::<span class="f">constrainOfficeStaffHeadedBy</span>($query, $user))-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
                 $<span class="f">can</span>(Ability::ManageRelievers) ? self::<span class="f">item</span>(<span class="s">&#039;Relievers&#039;</span>, <span class="s">&#039;relievers&#039;</span>, <span class="s">&#039;arrows-right-left&#039;</span>, badge: AbsenceNotice::<span class="f">query</span>()-&gt;<span class="f">needsReliever</span>()-&gt;<span class="f">visibleTo</span>($user)-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
                 <span class="c">// What guards paid for a deployment, claimed by Operations (roadmap 5).</span>
                 $<span class="f">can</span>(Ability::FileDeploymentClaims) ? self::<span class="f">item</span>(<span class="s">&#039;Deployment Costs&#039;</span>, <span class="s">&#039;deployment-claims&#039;</span>, <span class="s">&#039;banknotes&#039;</span>) : <span class="k">null</span>,
@@ -1741,7 +1737,7 @@ sequenceDiagram
 <section class="chapter" id="people">
   <div class="chapter-head"><span class="no">05</span><h2>People: employees, shifts, holidays</h2></div>
   <p class="lead">The employee profile is HR's record, and it exists before the login account does (<code>user_id</code> is nullable). That is the hinge of the registration rule. Government IDs and medical notes use Laravel's <code>encrypted</code> cast, and the profile carries explicit <code>is_office_staff</code> and <code>is_night_shift</code> flags for payroll.</p>
-  <details class="file" open><summary>app/Models/EmployeeProfile.php<span class="lines">384 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Models/EmployeeProfile.php<span class="lines">385 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Models;
 
@@ -1916,9 +1912,10 @@ sequenceDiagram
     <span class="k">public</span> <span class="k">function</span> <span class="f">scopeVisibleTo</span>(Builder $query, User $viewer): void
     {
         <span class="k">if</span> (! $viewer-&gt;<span class="f">isRegionallyLimited</span>()) {
-            <span class="c">// Operation HQ (no view-office-staff) looks after guards only.</span>
+            <span class="c">// Operation HQ (no view-office-staff) looks after guards, and heads the Satellite Operations.</span>
             <span class="k">if</span> (! $viewer-&gt;<span class="f">can</span>(Ability::ViewOfficeStaff-&gt;value)) {
-                $query-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>);
+                $query-&gt;<span class="f">where</span>(<span class="k">fn</span> (Builder $who) =&gt; $who-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)
+                    -&gt;<span class="f">when</span>($viewer-&gt;<span class="f">hasRole</span>(Role::OperationsHq), <span class="k">fn</span> (Builder $who) =&gt; $who-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.roles&#039;</span>, <span class="k">fn</span> (Builder $roles) =&gt; $roles-&gt;<span class="f">where</span>(<span class="s">&#039;role&#039;</span>, Role::SatelliteOperations-&gt;value))));
             }
 
             <span class="k">return</span>;
@@ -4447,8 +4444,152 @@ flowchart TD
 <!-- ============================== 07 ============================== -->
 <section class="chapter" id="requests">
   <div class="chapter-head"><span class="no">07</span><h2>Leave &amp; overtime</h2></div>
-  <p class="lead">Employees file, supervisors decide: guards' leave goes to HR (or Admin), office staff's leave to the President or Vice President, and overtime to HR, Admin or Operations (a Satellite only in its region). Reviews lock the row so two supervisors can't both decide, nobody reviews their own request, and approved overtime can be less than requested, never more. Payroll later pays the smaller of logged and approved overtime, day by day.</p>
-  <details class="file" open><summary>app/Actions/Leave/ReviewLeaveRequest.php<span class="lines">117 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <p class="lead">Employees file, supervisors decide: guards' leave climbs Operations to HR, and their overtime goes to HR, Admin or Operations (a Satellite only in its region). Office staff's leave and overtime go to <b>their head</b> (<code>App\Support\Heads</code>, the owner's chain): HR for Admin, Accounting and Operation HQ; Operation HQ for a Satellite; the President or VP for HR. The President or VP still see them all. Reviews lock the row so two supervisors can't both decide, nobody reviews their own request, and approved overtime can be less than requested, never more. Payroll later pays the smaller of logged and approved overtime, day by day.</p>
+  <div class="why">
+    <div><b>One chain of heads</b><span><code>App\Support\Heads</code> answers both "who heads this person" (<code>of</code>, <code>label</code>) and "does X head Y" (<code>isHeadOf</code>). It covers a guard → Operation HQ + the region's Satellite; HR → the President or VP; a Satellite → Operation HQ; anyone else in the office → HR. Leave, overtime, time away, attendance alerts, Notices to Explain and merits all ask it, so the chain lives in one place. A Satellite's leave waits at stage <code>hq</code>, where Operation HQ <b>decides</b> it rather than endorsing it on to HR as for a guard.</span></div>
+  </div>
+  <details class="file"><summary>app/Support/Heads.php<span class="lines">141 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Support;
+
+<span class="k">use</span> App\Enums\Region;
+<span class="k">use</span> App\Enums\Role;
+<span class="k">use</span> App\Models\Client;
+<span class="k">use</span> App\Models\User;
+<span class="k">use</span> Illuminate\Database\Eloquent\Builder;
+<span class="k">use</span> Illuminate\Database\Eloquent\Collection;
+
+<span class="c">/**
+ * The owner&#039;s chain of heads (2026-10-23): who supervises whom, in one place.
+ *
+ *   a guard                                         Operations: Operation HQ, and the Satellite of their client&#039;s region
+ *   HR                                              the President or Vice President
+ *   a Satellite Operation                           Operation HQ
+ *   other office staff (Admin, Accounting,
+ *   Operation HQ, Developer, staff with no role)    HR
+ *
+ * Used for attendance alerts, deciding office staff&#039;s leave and overtime, watching their
+ * time away, and Notices to Explain / merits. The Super Admin may act for any head (backup),
+ * and the President or Vice President still SEE every office staffer&#039;s requests (they monitor).
+ */</span>
+<span class="k">final</span> <span class="k">class</span> Heads
+{
+    <span class="k">public</span> <span class="k">const</span> OPERATIONS = <span class="s">&#039;operations&#039;</span>;
+
+    <span class="k">public</span> <span class="k">const</span> LEADERSHIP = <span class="s">&#039;leadership&#039;</span>;
+
+    <span class="k">public</span> <span class="k">const</span> OPERATIONS_HQ = <span class="s">&#039;operations_hq&#039;</span>;
+
+    <span class="k">public</span> <span class="k">const</span> HR = <span class="s">&#039;hr&#039;</span>;
+
+    <span class="c">/** Which group heads this person. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">groupOf</span>(User $person): string
+    {
+        $person-&gt;<span class="f">loadMissing</span>([<span class="s">&#039;roles&#039;</span>, <span class="s">&#039;employeeProfile&#039;</span>]);
+
+        <span class="k">return</span> <span class="k">match</span> (<span class="k">true</span>) {
+            $person-&gt;employeeProfile !== <span class="k">null</span> &amp;&amp; ! $person-&gt;employeeProfile-&gt;is_office_staff =&gt; self::OPERATIONS,
+            $person-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; self::LEADERSHIP,
+            $person-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) =&gt; self::OPERATIONS_HQ,
+            <span class="k">default</span> =&gt; self::HR,
+        };
+    }
+
+    <span class="c">/** &quot;HR&quot;, &quot;Operation HQ&quot;, &quot;the President or Vice President&quot;, &quot;Operations&quot;: for messages. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">label</span>(User $person): string
+    {
+        <span class="k">return</span> <span class="k">match</span> (self::<span class="f">groupOf</span>($person)) {
+            self::OPERATIONS =&gt; <span class="s">&#039;Operations&#039;</span>,
+            self::LEADERSHIP =&gt; Role::LEADERSHIP_LABEL,
+            self::OPERATIONS_HQ =&gt; <span class="s">&#039;Operation HQ&#039;</span>,
+            <span class="k">default</span> =&gt; <span class="s">&#039;HR&#039;</span>,
+        };
+    }
+
+    <span class="c">/**
+     * The people who head this person, still working here; never the person themselves.
+     * $client: where a guard actually worked (a relief duty), else their own client.
+     *
+     * @return Collection&lt;int, User&gt;
+     */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">of</span>(User $person, ?Client $client = <span class="k">null</span>): Collection
+    {
+        $person-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;employeeProfile.client&#039;</span>);
+
+        $heads = <span class="k">match</span> (self::<span class="f">groupOf</span>($person)) {
+            self::OPERATIONS =&gt; self::<span class="f">operationsFor</span>(($client ?? $person-&gt;employeeProfile?-&gt;client)?-&gt;region),
+            self::LEADERSHIP =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Role::<span class="f">leadership</span>())-&gt;<span class="f">get</span>(),
+            self::OPERATIONS_HQ =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq])-&gt;<span class="f">get</span>(),
+            <span class="k">default</span> =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::Hr])-&gt;<span class="f">get</span>(),
+        };
+
+        <span class="k">return</span> $heads-&gt;<span class="f">reject</span>(<span class="k">fn</span> (User $head) =&gt; $head-&gt;<span class="f">is</span>($person))-&gt;<span class="f">values</span>();
+    }
+
+    <span class="c">/** Whether $head heads $person (and so may decide for them). The Super Admin may, as backup. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">isHeadOf</span>(User $head, User $person): bool
+    {
+        <span class="k">if</span> ($head-&gt;<span class="f">is</span>($person)) {
+            <span class="k">return</span> <span class="k">false</span>;
+        }
+
+        <span class="k">if</span> ($head-&gt;<span class="f">hasRole</span>(Role::SuperAdmin)) {
+            <span class="k">return</span> <span class="k">true</span>;
+        }
+
+        <span class="k">return</span> <span class="k">match</span> (self::<span class="f">groupOf</span>($person)) {
+            self::OPERATIONS =&gt; $head-&gt;<span class="f">hasRole</span>(Role::OperationsHq) || ($head-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) &amp;&amp; $head-&gt;<span class="f">canSeeEmployee</span>($person)),
+            self::LEADERSHIP =&gt; $head-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">leadership</span>()),
+            self::OPERATIONS_HQ =&gt; $head-&gt;<span class="f">hasRole</span>(Role::OperationsHq),
+            <span class="k">default</span> =&gt; $head-&gt;<span class="f">hasRole</span>(Role::Hr),
+        };
+    }
+
+    <span class="c">/**
+     * Narrows a query of users to the OFFICE staff this viewer heads: HR → office staff who aren&#039;t
+     * HR or a Satellite; Operation HQ → Satellites; the President or VP → HR; Super Admin → all.
+     *
+     * @param  Builder&lt;User&gt;  $users
+     */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">constrainOfficeStaffHeadedBy</span>(Builder $users, User $viewer): void
+    {
+        $users-&gt;<span class="f">officeStaff</span>();
+        $role = <span class="k">fn</span> (Role ...$roles) =&gt; <span class="k">fn</span> (Builder $userRoles) =&gt; $userRoles-&gt;<span class="f">whereIn</span>(<span class="s">&#039;role&#039;</span>, <span class="f">array_map</span>(<span class="k">fn</span> (Role $r) =&gt; $r-&gt;value, $roles));
+
+        <span class="k">match</span> (<span class="k">true</span>) {
+            $viewer-&gt;<span class="f">hasRole</span>(Role::SuperAdmin) =&gt; <span class="k">null</span>,
+            $viewer-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">leadership</span>()) =&gt; $users-&gt;<span class="f">whereHas</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::Hr)),
+            $viewer-&gt;<span class="f">hasRole</span>(Role::OperationsHq) =&gt; $users-&gt;<span class="f">whereHas</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::SatelliteOperations)),
+            $viewer-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; $users-&gt;<span class="f">whereDoesntHave</span>(<span class="s">&#039;roles&#039;</span>, $<span class="f">role</span>(Role::Hr, Role::SatelliteOperations)),
+            <span class="k">default</span> =&gt; $users-&gt;<span class="f">whereRaw</span>(<span class="s">&#039;1 = 0&#039;</span>),
+        };
+    }
+
+    <span class="c">/** Sees every office staffer&#039;s requests and time away: the President or VP (monitor) and the Super Admin. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">seesAllOfficeStaff</span>(User $viewer): bool
+    {
+        <span class="k">return</span> $viewer-&gt;<span class="f">hasAnyRole</span>(Role::SuperAdmin, ...Role::<span class="f">leadership</span>());
+    }
+
+    <span class="c">/** Sees some office staff&#039;s requests: everyone who heads office staff (HR, Operation HQ) or monitors them all. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">headsOfficeStaff</span>(User $viewer): bool
+    {
+        <span class="k">return</span> self::<span class="f">seesAllOfficeStaff</span>($viewer) || $viewer-&gt;<span class="f">hasAnyRole</span>(Role::Hr, Role::OperationsHq);
+    }
+
+    <span class="c">/**
+     * Operation HQ, and the Satellite Operation covering this region.
+     *
+     * @return Collection&lt;int, User&gt;
+     */</span>
+    <span class="k">private</span> <span class="k">static</span> <span class="k">function</span> <span class="f">operationsFor</span>(?Region $region): Collection
+    {
+        <span class="k">return</span> User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq, Role::SatelliteOperations])-&gt;<span class="f">with</span>(<span class="s">&#039;roles&#039;</span>)-&gt;<span class="f">get</span>()
+            -&gt;<span class="f">filter</span>(<span class="k">fn</span> (User $user) =&gt; $user-&gt;<span class="f">hasRole</span>(Role::OperationsHq) || ($region !== <span class="k">null</span> &amp;&amp; $user-&gt;operations_region === $region))
+            -&gt;<span class="f">values</span>();
+    }
+}</code></pre></details>
+  <details class="file" open><summary>app/Actions/Leave/ReviewLeaveRequest.php<span class="lines">110 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Leave;
 
@@ -4459,6 +4600,7 @@ flowchart TD
 <span class="k">use</span> App\Models\User;
 <span class="k">use</span> App\Notifications\RequestDecided;
 <span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Illuminate\Support\Facades\DB;
 <span class="k">use</span> Illuminate\Validation\ValidationException;
 <span class="k">use</span> InvalidArgumentException;
@@ -4466,36 +4608,28 @@ flowchart TD
 <span class="c">/**
  * Who decides depends on who&#039;s asking: HR decides guards&#039; leave (final),
  * once the region&#039;s Satellite Operation and Operation HQ have endorsed it
- * (EndorseLeaveRequest); the President or Vice President decides office staff&#039;s.
+ * (EndorseLeaveRequest); an office staffer&#039;s head decides theirs (Heads: HR for Admin,
+ * Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR).
  */</span>
 <span class="k">final</span> <span class="k">class</span> ReviewLeaveRequest
 {
     <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(<span class="k">private</span> <span class="k">readonly</span> AuditLogger $audit) {}
 
     <span class="c">/**
-     * The gate for deciding this request. No HR profile (e.g. a Super Admin&#039;s
-     * own account) counts as office staff.
-     */</span>
-    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">requiredAbility</span>(LeaveRequest $leaveRequest): Ability
-    {
-        $leaveRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user.employeeProfile&#039;</span>);
-
-        <span class="k">return</span> LeaveRequest::<span class="f">reviewAbilityFor</span>($leaveRequest-&gt;user);
-    }
-
-    <span class="c">/**
-     * Why this reviewer can&#039;t decide it, or null when they can. The list shows
-     * the same text in place of the Review button.
+     * Why this reviewer can&#039;t decide it, or null when they can. The list shows the same text
+     * in place of the Review button. A guard&#039;s: HR, once Operations has endorsed it. An office
+     * staffer&#039;s: their head (Heads). No HR profile (e.g. a Super Admin&#039;s own account) counts
+     * as office staff.
      */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">blockedReason</span>(LeaveRequest $leaveRequest, User $reviewer): ?string
     {
-        $office = self::<span class="f">requiredAbility</span>($leaveRequest) === Ability::ReviewOfficeLeave;
+        $leaveRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user.employeeProfile&#039;</span>);
+        $office = $leaveRequest-&gt;user-&gt;<span class="f">isOfficeStaff</span>();
 
         <span class="k">return</span> <span class="k">match</span> (<span class="k">true</span>) {
             $leaveRequest-&gt;user_id === $reviewer-&gt;id =&gt; <span class="s">&#039;You cannot review your own request.&#039;</span>,
-            ! $reviewer-&gt;<span class="f">can</span>(self::<span class="f">requiredAbility</span>($leaveRequest)-&gt;value) =&gt; $office
-                ? <span class="s">&#039;Office staff leave is approved by the President or Vice President.&#039;</span>
-                : <span class="s">&#039;Guards\&#039; leave is approved by HR.&#039;</span>,
+            $office &amp;&amp; ! Heads::<span class="f">isHeadOf</span>($reviewer, $leaveRequest-&gt;user) =&gt; <span class="s">&#039;Their head decides it: &#039;</span>.Heads::<span class="f">label</span>($leaveRequest-&gt;user).<span class="s">&#039;.&#039;</span>,
+            ! $office &amp;&amp; ! $reviewer-&gt;<span class="f">can</span>(Ability::ReviewFieldLeave-&gt;value) =&gt; <span class="s">&#039;Guards\&#039; leave is approved by HR.&#039;</span>,
             <span class="c">// A guard&#039;s leave reaches HR only once Operation HQ has endorsed it.</span>
             ! $office &amp;&amp; $leaveRequest-&gt;stage !== <span class="k">null</span> &amp;&amp; $leaveRequest-&gt;stage-&gt;<span class="f">endorses</span>() =&gt; <span class="s">&quot;Waiting for {$leaveRequest-&gt;stage-&gt;label()} to endorse it.&quot;</span>,
             ! $reviewer-&gt;<span class="f">canSeeEmployee</span>($leaveRequest-&gt;user) =&gt; <span class="s">&#039;This employee is outside your region.&#039;</span>,
@@ -4565,7 +4699,7 @@ flowchart TD
         });
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Actions/Overtime/ReviewOvertimeRequest.php<span class="lines">99 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/Overtime/ReviewOvertimeRequest.php<span class="lines">93 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Overtime;
 
@@ -4576,6 +4710,7 @@ flowchart TD
 <span class="k">use</span> App\Models\User;
 <span class="k">use</span> App\Notifications\RequestDecided;
 <span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Illuminate\Support\Facades\DB;
 <span class="k">use</span> Illuminate\Validation\ValidationException;
 <span class="k">use</span> InvalidArgumentException;
@@ -4584,34 +4719,27 @@ flowchart TD
  * Approving sets approved_minutes, which may be LESS than requested. Payroll
  * pays the smaller of logged and approved overtime, day by day.
  *
- * Who decides depends on who&#039;s asking, like leave: the President or Vice President decides
- * office staff&#039;s overtime; Operations, HR or Admin decide guards&#039;.
+ * Who decides depends on who&#039;s asking, like leave: an office staffer&#039;s head (Heads: HR for
+ * Admin, Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR);
+ * Operations, HR or Admin decide guards&#039;.
  */</span>
 <span class="k">final</span> <span class="k">class</span> ReviewOvertimeRequest
 {
     <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(<span class="k">private</span> <span class="k">readonly</span> AuditLogger $audit) {}
 
-    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">requiredAbility</span>(OvertimeRequest $overtimeRequest): Ability
-    {
-        $overtimeRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user.employeeProfile&#039;</span>);
-
-        <span class="k">return</span> OvertimeRequest::<span class="f">reviewAbilityFor</span>($overtimeRequest-&gt;user);
-    }
-
     <span class="c">/**
-     * Why this reviewer can&#039;t decide it, or null when they can: their own
-     * request, not their kind of request, or a guard outside a Satellite
-     * Operation&#039;s region.
+     * Why this reviewer can&#039;t decide it, or null when they can: their own request, not
+     * their head, not their kind of request, or a guard outside a Satellite&#039;s region.
      */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">blockedReason</span>(OvertimeRequest $overtimeRequest, User $reviewer): ?string
     {
-        $overtimeRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user&#039;</span>);
+        $overtimeRequest-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;user.employeeProfile&#039;</span>);
+        $office = $overtimeRequest-&gt;user-&gt;<span class="f">isOfficeStaff</span>();
 
         <span class="k">return</span> <span class="k">match</span> (<span class="k">true</span>) {
             $overtimeRequest-&gt;user_id === $reviewer-&gt;id =&gt; <span class="s">&#039;You cannot review your own request.&#039;</span>,
-            ! $reviewer-&gt;<span class="f">can</span>(self::<span class="f">requiredAbility</span>($overtimeRequest)-&gt;value) =&gt; self::<span class="f">requiredAbility</span>($overtimeRequest) === Ability::ReviewOfficeOvertime
-                ? <span class="s">&#039;Office staff overtime is approved by the President or Vice President.&#039;</span>
-                : <span class="s">&#039;Guards\&#039; overtime is approved by Operations, HR or Admin.&#039;</span>,
+            $office &amp;&amp; ! Heads::<span class="f">isHeadOf</span>($reviewer, $overtimeRequest-&gt;user) =&gt; <span class="s">&#039;Their head decides it: &#039;</span>.Heads::<span class="f">label</span>($overtimeRequest-&gt;user).<span class="s">&#039;.&#039;</span>,
+            ! $office &amp;&amp; ! $reviewer-&gt;<span class="f">can</span>(Ability::ReviewOvertime-&gt;value) =&gt; <span class="s">&#039;Guards\&#039; overtime is approved by Operations, HR or Admin.&#039;</span>,
             ! $reviewer-&gt;<span class="f">canSeeEmployee</span>($overtimeRequest-&gt;user) =&gt; <span class="s">&#039;This employee is outside your region.&#039;</span>,
             <span class="k">default</span> =&gt; <span class="k">null</span>,
         };
@@ -4688,7 +4816,7 @@ flowchart TD
 
 <span class="c">/**
  * Guards&#039; leave climbs Satellite Operation → Operation HQ → HR (final);
- * office staff&#039;s goes to the President or Vice President. Each viewer gets the button for their
+ * office staff&#039;s goes to their head (App\Support\Heads). Each viewer gets the button for their
  * step: Endorse, Review, or a &quot;waiting for…&quot; note.
  *
  * @property-read LengthAwarePaginator&lt;int, LeaveRequest&gt; $requests
@@ -4887,7 +5015,7 @@ flowchart TD
     <tr><th>Question you'd ask</th><th>Answer</th></tr>
     <tr><td>How is cancelling someone else's leave prevented?</td><td>The id is looked up through the user: <code>$user-&gt;leaveRequests()-&gt;findOrFail($id)</code>. Another person's id is simply not found.</td></tr>
     <tr><td>Why snapshot the post onto the overtime request?</td><td>So reassigning the guard later doesn't rewrite where they actually worked that night.</td></tr>
-    <tr><td>Who gets a guard's overtime request?</td><td>Operations, automatically: Operation HQ and the guard's region's Satellite Operation are told (<code>SubmitOvertimeRequest::operationsFor</code>). Office staff's goes to the President or Vice President. Employees used to pick a supervisor from a list, which was an extra step and an easy mistake (the wrong person, or one who couldn't approve it). Who decides is still by role; lists show <b>Sent to</b>.</td></tr>
+    <tr><td>Who gets a guard's overtime request?</td><td>Operations, automatically: Operation HQ and the guard's region's Satellite Operation are told (<code>SubmitOvertimeRequest::operationsFor</code>). Office staff's goes to their head (<code>Heads::of</code>). Employees used to pick a supervisor from a list, which was an extra step and an easy mistake (the wrong person, or one who couldn't approve it). Who decides is still by role; lists show <b>Sent to</b>.</td></tr>
     <tr><td>Which leave needs a document?</td><td>Sick leave from 2 days (a medical certificate), and the leaves under special laws: maternity, paternity, solo parent, VAWC and special leave for women, each with its proof (<code>LeaveType::document()</code>). Vacation and emergency don't: there's nothing to prove, and asking only slows people down.</td></tr>
     <tr><td>Can someone file sick leave after the fact?</td><td>Yes, up to 7 days after it started (sick and emergency only). They're sick first and file once back, attaching the certificate then. Everything else starts today or later.</td></tr>
     <tr><td>Who decides the 2 days and the 7 days?</td><td>HR, in the app: <b>Leave Requests → Rules → Change</b>. Saved as a Setting and audited (<code>SaveLeaveRules</code>, <code>LeaveRules</code>), and My Leave reads the same numbers. Company policy belongs with the people who run the company, not in a server file.</td></tr>
@@ -4930,7 +5058,7 @@ flowchart TD
         $refusal = <span class="k">match</span> (<span class="k">true</span>) {
             ! $recorder-&gt;<span class="f">can</span>(Ability::ReviewOvertime-&gt;value) =&gt; <span class="s">&#039;Only Operations, HR or Admin add a guard\&#039;s extra time.&#039;</span>,
             $guard-&gt;id === $recorder-&gt;id =&gt; <span class="s">&#039;You cannot add extra time for yourself.&#039;</span>,
-            $guard-&gt;<span class="f">isOfficeStaff</span>() =&gt; <span class="s">&#039;Office staff\&#039;s overtime is approved by the President or Vice President: they ask for it on My Overtime.&#039;</span>,
+            $guard-&gt;<span class="f">isOfficeStaff</span>() =&gt; <span class="s">&#039;Office staff ask their head for overtime on My Overtime.&#039;</span>,
             ! $recorder-&gt;<span class="f">canSeeEmployee</span>($guard) =&gt; <span class="s">&#039;This guard is outside your region.&#039;</span>,
             $date-&gt;<span class="f">isAfter</span>(<span class="f">today</span>()) =&gt; <span class="s">&#039;Extra time is added once it\&#039;s worked: choose today or an earlier date.&#039;</span>,
             $minutes &lt; <span class="n">15</span> || $minutes &gt; <span class="n">12</span> * <span class="n">60</span> =&gt; <span class="s">&#039;Extra time is from 15 minutes to 12 hours.&#039;</span>,
@@ -13443,14 +13571,11 @@ flowchart TD
         <span class="k">return</span> <span class="k">new</span> <span class="f">DutyForPunch</span>(<span class="k">null</span>, $usualShift, $today, $profile?-&gt;client, $refusal, $next);
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Actions/Attendance/SendAttendanceAlerts.php<span class="lines">191 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/Attendance/SendAttendanceAlerts.php<span class="lines">148 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Attendance;
 
-<span class="k">use</span> App\Enums\Region;
-<span class="k">use</span> App\Enums\Role;
 <span class="k">use</span> App\Livewire\Admin\AttendanceLog;
-<span class="k">use</span> App\Models\Client;
 <span class="k">use</span> App\Models\Holiday;
 <span class="k">use</span> App\Models\LeaveRequest;
 <span class="k">use</span> App\Models\SentAlert;
@@ -13459,8 +13584,8 @@ flowchart TD
 <span class="k">use</span> App\Notifications\UpdateNotice;
 <span class="k">use</span> App\Services\Attendance\AttendanceCalculator;
 <span class="k">use</span> App\Support\AttendanceAlertRules;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Carbon\CarbonImmutable;
-<span class="k">use</span> Illuminate\Support\Collection;
 <span class="k">use</span> Illuminate\Support\Facades\DB;
 <span class="k">use</span> Illuminate\Support\Facades\Notification;
 
@@ -13468,7 +13593,7 @@ flowchart TD
  * Run every 5 minutes. Two gaps nobody heard about before (the rules are HR&#039;s, AttendanceAlertRules):
  *
  *  1. A missed clock-out. The employee first, some minutes after the shift ended (&quot;clock out
- *     now&quot;); if it&#039;s still open later, their head (headsOf: the owner&#039;s chain).
+ *     now&quot;); if it&#039;s still open later, their head (App\Support\Heads: the owner&#039;s chain).
  *  2. An office staffer who hasn&#039;t clocked in on a work day (not on leave, not a holiday): the
  *     employee first, and one summary bell per head per run, naming only the people they head.
  *     Guards are covered by DetectNoShows (their roster says when they&#039;re due).
@@ -13522,7 +13647,7 @@ flowchart TD
             }
 
             <span class="k">if</span> ($now-&gt;<span class="f">gte</span>($end-&gt;<span class="f">addMinutes</span>($rules[<span class="s">&#039;clock_out_escalate_minutes&#039;</span>])) &amp;&amp; $this-&gt;<span class="f">claim</span>(<span class="s">&#039;clock_out.escalated&#039;</span>, $log)) {
-                Notification::<span class="f">send</span>($this-&gt;<span class="f">headsOf</span>($log-&gt;user, $log-&gt;dutyAssignment?-&gt;client), <span class="k">new</span> <span class="f">UpdateNotice</span>(<span class="s">&quot;Not clocked out: {$log-&gt;user-&gt;name}&quot;</span>,
+                Notification::<span class="f">send</span>(Heads::<span class="f">of</span>($log-&gt;user, $log-&gt;dutyAssignment?-&gt;client), <span class="k">new</span> <span class="f">UpdateNotice</span>(<span class="s">&quot;Not clocked out: {$log-&gt;user-&gt;name}&quot;</span>,
                     <span class="s">&quot;Shift ended at {$ended}; still clocked in since &quot;</span>.$log-&gt;clock_in_at?-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;. Check with them, then record the real time.&#039;</span>,
                     <span class="f">route</span>(<span class="s">&#039;attendance-log&#039;</span>, [<span class="s">&#039;show&#039;</span> =&gt; AttendanceLog::NOT_CLOCKED_OUT]), <span class="s">&#039;clock-alert&#039;</span>));
                 $escalated++;
@@ -13572,7 +13697,7 @@ flowchart TD
                     <span class="s">&#039;Your shift started at &#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;. Clock in on My Attendance, or file leave if you\&#039;re off today.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;attendance&#039;</span>), <span class="s">&#039;clock&#039;</span>);
                 $missing++;
 
-                <span class="k">foreach</span> ($this-&gt;<span class="f">headsOf</span>($user) <span class="k">as</span> $head) {
+                <span class="k">foreach</span> (Heads::<span class="f">of</span>($user) <span class="k">as</span> $head) {
                     $byHead[$head-&gt;id][<span class="s">&#039;head&#039;</span>] = $head;
                     $byHead[$head-&gt;id][<span class="s">&#039;names&#039;</span>][] = $user-&gt;name.<span class="s">&#039; (&#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;)&#039;</span>;
                 }
@@ -13587,46 +13712,6 @@ flowchart TD
         }
 
         <span class="k">return</span> $missing;
-    }
-
-    <span class="c">/**
-     * Who heads this person for attendance (the owner&#039;s chain, 2026-10-23):
-     *
-     *   a guard                         Operation HQ and the Satellite of their client&#039;s region
-     *   HR                              the President or Vice President
-     *   Satellite Operation             Operation HQ
-     *   other office staff (Admin,
-     *   Accounting, Operation HQ, …)    HR
-     *
-     * Never the person themselves.
-     *
-     * @return Collection&lt;int, User&gt;
-     */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">headsOf</span>(User $person, ?Client $client = <span class="k">null</span>): Collection
-    {
-        $person-&gt;<span class="f">loadMissing</span>([<span class="s">&#039;roles&#039;</span>, <span class="s">&#039;employeeProfile.client&#039;</span>]);
-        $profile = $person-&gt;employeeProfile;
-
-        $heads = <span class="k">match</span> (<span class="k">true</span>) {
-            $profile !== <span class="k">null</span> &amp;&amp; ! $profile-&gt;is_office_staff =&gt; $this-&gt;<span class="f">operationsFor</span>(($client ?? $profile-&gt;client)?-&gt;region),
-            $person-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Role::<span class="f">leadership</span>())-&gt;<span class="f">get</span>(),
-            $person-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq])-&gt;<span class="f">get</span>(),
-            <span class="k">default</span> =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::Hr])-&gt;<span class="f">get</span>(),
-        };
-
-        <span class="k">return</span> $heads-&gt;<span class="f">reject</span>(<span class="k">fn</span> (User $head) =&gt; $head-&gt;<span class="f">is</span>($person))-&gt;<span class="f">values</span>();
-    }
-
-    <span class="c">/**
-     * Operation HQ, and the Satellite Operation covering this region.
-     *
-     * @return Collection&lt;int, User&gt;
-     */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">operationsFor</span>(?Region $region): Collection
-    {
-        <span class="k">return</span> User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq, Role::SatelliteOperations])-&gt;<span class="f">with</span>(<span class="s">&#039;roles&#039;</span>)-&gt;<span class="f">get</span>()
-            -&gt;<span class="f">filter</span>(<span class="k">fn</span> (User $user) =&gt; $user-&gt;<span class="f">hasRole</span>(Role::OperationsHq) || ($region !== <span class="k">null</span> &amp;&amp; $user-&gt;operations_region === $region))
-            -&gt;<span class="f">values</span>();
     }
 
     <span class="k">private</span> <span class="k">function</span> <span class="f">claim</span>(string $alert, TimeLog|User $subject): bool
@@ -15042,7 +15127,7 @@ flowchart TD
         <span class="k">return</span> [<span class="s">&#039;post&#039;</span> =&gt; $post, <span class="s">&#039;points&#039;</span> =&gt; $points, <span class="s">&#039;address&#039;</span> =&gt; $address, <span class="s">&#039;latest&#039;</span> =&gt; $latest];
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Livewire/Admin/AwayMonitor.php<span class="lines">280 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Livewire/Admin/AwayMonitor.php<span class="lines">286 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Livewire\Admin;
 
@@ -15053,6 +15138,7 @@ flowchart TD
 <span class="k">use</span> App\Livewire\Concerns\InteractsWithUser;
 <span class="k">use</span> App\Models\AwayLog;
 <span class="k">use</span> App\Queries\Attendance\AwayTrailQuery;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Contracts\Pagination\LengthAwarePaginator;
 <span class="k">use</span> Illuminate\Contracts\View\View;
@@ -15182,16 +15268,21 @@ flowchart TD
     }
 
     <span class="c">/**
-     * Absences this audience covers: guards in the viewer&#039;s reach, or office
-     * staff (an account with no HR profile counts as office staff).
+     * Absences this audience covers: guards in the viewer&#039;s reach, or office staff (an account
+     * with no HR profile counts as office staff): all of them for the President or VP and the
+     * Super Admin, else only those the viewer heads (Heads: HR, or Operation HQ for Satellites).
      *
      * @return Builder&lt;AwayLog&gt;
      */</span>
     <span class="k">private</span> <span class="k">function</span> <span class="f">scoped</span>(): Builder
     {
-        <span class="k">return</span> AwayLog::<span class="f">query</span>()-&gt;<span class="f">whereHas</span>(<span class="s">&#039;user&#039;</span>, <span class="k">fn</span> (Builder $user) =&gt; $this-&gt;scope === <span class="s">&#039;office&#039;</span>
-            ? $user-&gt;<span class="f">where</span>(<span class="k">fn</span> (Builder $who) =&gt; $who-&gt;<span class="f">whereDoesntHave</span>(<span class="s">&#039;employeeProfile&#039;</span>)-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">true</span>)))
-            : $user-&gt;<span class="f">visibleTo</span>($this-&gt;<span class="f">currentUser</span>())-&gt;<span class="f">whereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)));
+        $viewer = $this-&gt;<span class="f">currentUser</span>();
+
+        <span class="k">return</span> AwayLog::<span class="f">query</span>()-&gt;<span class="f">whereHas</span>(<span class="s">&#039;user&#039;</span>, <span class="k">fn</span> (Builder $user) =&gt; <span class="k">match</span> (<span class="k">true</span>) {
+            $this-&gt;scope !== <span class="s">&#039;office&#039;</span> =&gt; $user-&gt;<span class="f">visibleTo</span>($viewer)-&gt;<span class="f">whereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)),
+            Heads::<span class="f">seesAllOfficeStaff</span>($viewer) =&gt; $user-&gt;<span class="f">officeStaff</span>(),
+            <span class="k">default</span> =&gt; Heads::<span class="f">constrainOfficeStaffHeadedBy</span>($user, $viewer),
+        });
     }
 
     <span class="c">/** Regions are a filter only for guards, and only for viewers who see more than one. */</span>
@@ -15322,11 +15413,10 @@ flowchart TD
         <span class="k">return</span> <span class="f">view</span>(<span class="s">&#039;livewire.admin.away-monitor&#039;</span>);
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Actions/Patrols/SendPatrolAlerts.php<span class="lines">176 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/Patrols/SendPatrolAlerts.php<span class="lines">172 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Patrols;
 
-<span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\Role;
 <span class="k">use</span> App\Models\AwayLog;
 <span class="k">use</span> App\Models\SentAlert;
@@ -15334,6 +15424,7 @@ flowchart TD
 <span class="k">use</span> App\Models\User;
 <span class="k">use</span> App\Notifications\PatrolAlert;
 <span class="k">use</span> App\Queries\Attendance\PatrolRoundsQuery;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Support\Collection;
 <span class="k">use</span> Illuminate\Support\Facades\DB;
@@ -15349,8 +15440,8 @@ flowchart TD
  *  - someone away hasn&#039;t shared their location for a long while.
  * Merely running a little late, or a reminder to share, is never an alert.
  *
- * Guards&#039; alerts go to Operation HQ and the region&#039;s Satellite Operation;
- * office staff&#039;s to the President or Vice President (monitor-office-away), like their leave.
+ * Guards&#039; alerts go to Operation HQ and the region&#039;s Satellite Operation; office staff&#039;s to
+ * their head (App\Support\Heads), like their leave.
  */</span>
 <span class="k">final</span> <span class="k">class</span> SendPatrolAlerts
 {
@@ -15362,9 +15453,8 @@ flowchart TD
     <span class="k">public</span> <span class="k">function</span> <span class="f">handle</span>(CarbonImmutable $now): int
     {
         $operations = User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq, Role::SatelliteOperations])-&gt;<span class="f">with</span>(<span class="s">&#039;roles&#039;</span>)-&gt;<span class="f">get</span>();
-        $executives = User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Ability::MonitorOfficeAway-&gt;<span class="f">roles</span>())-&gt;<span class="f">get</span>();
 
-        <span class="k">return</span> $this-&gt;<span class="f">missedRounds</span>($now, $operations) + $this-&gt;<span class="f">lateAway</span>($now, $operations, $executives) + $this-&gt;<span class="f">overdueLocation</span>($now, $operations, $executives);
+        <span class="k">return</span> $this-&gt;<span class="f">missedRounds</span>($now, $operations) + $this-&gt;<span class="f">lateAway</span>($now, $operations) + $this-&gt;<span class="f">overdueLocation</span>($now, $operations);
     }
 
     <span class="c">/**
@@ -15409,9 +15499,8 @@ flowchart TD
 
     <span class="c">/**
      * @param  Collection&lt;int, User&gt;  $operations
-     * @param  Collection&lt;int, User&gt;  $executives
      */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">lateAway</span>(CarbonImmutable $now, Collection $operations, Collection $executives): int
+    <span class="k">private</span> <span class="k">function</span> <span class="f">lateAway</span>(CarbonImmutable $now, Collection $operations): int
     {
         $sent = <span class="n">0</span>;
 
@@ -15420,7 +15509,7 @@ flowchart TD
                 continue;
             }
 
-            [$recipients, $where, $page, $url] = $this-&gt;<span class="f">audience</span>($away, $operations, $executives);
+            [$recipients, $where, $page, $url] = $this-&gt;<span class="f">audience</span>($away, $operations);
             $sent += $this-&gt;<span class="f">send</span>(<span class="s">&#039;away.late.&#039;</span>.$away-&gt;<span class="f">expectedBackAt</span>()-&gt;<span class="f">format</span>(<span class="s">&#039;YmdHis&#039;</span>), $away, $recipients,
                 <span class="k">new</span> <span class="f">PatrolAlert</span>($away-&gt;user-&gt;name, <span class="s">&quot;Not back yet: {$away-&gt;minutesPastExpected($now)} min past {$away-&gt;expectedBackAt()-&gt;format(&#039;g:i A&#039;)} ({$away-&gt;reason-&gt;label()})&quot;</span>, ($away-&gt;note ?? <span class="s">&#039;No note.&#039;</span>).<span class="s">&quot; Away from {$where} since {$away-&gt;left_at-&gt;format(&#039;g:i A&#039;)}; no more time asked. Call them, or approve it on {$page}.&quot;</span>, $url));
         }
@@ -15430,9 +15519,8 @@ flowchart TD
 
     <span class="c">/**
      * @param  Collection&lt;int, User&gt;  $operations
-     * @param  Collection&lt;int, User&gt;  $executives
      */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">overdueLocation</span>(CarbonImmutable $now, Collection $operations, Collection $executives): int
+    <span class="k">private</span> <span class="k">function</span> <span class="f">overdueLocation</span>(CarbonImmutable $now, Collection $operations): int
     {
         $sent = <span class="n">0</span>;
 
@@ -15443,7 +15531,7 @@ flowchart TD
 
             <span class="c">// Once per silence: keyed on the last time they shared, so a new</span>
             <span class="c">// update and then another silence alerts again, but no repeats.</span>
-            [$recipients, , $page, $url] = $this-&gt;<span class="f">audience</span>($away, $operations, $executives);
+            [$recipients, , $page, $url] = $this-&gt;<span class="f">audience</span>($away, $operations);
             $sent += $this-&gt;<span class="f">send</span>(<span class="s">&#039;away.location.&#039;</span>.$away-&gt;<span class="f">lastSeenAt</span>()-&gt;<span class="f">format</span>(<span class="s">&#039;YmdHis&#039;</span>), $away, $recipients,
                 <span class="k">new</span> <span class="f">PatrolAlert</span>($away-&gt;user-&gt;name, <span class="s">&#039;No location shared for &#039;</span>.(int) $away-&gt;<span class="f">lastSeenAt</span>()-&gt;<span class="f">diffInMinutes</span>($now).<span class="s">&#039; min while away (&#039;</span>.$away-&gt;reason-&gt;<span class="f">label</span>().<span class="s">&#039;)&#039;</span>, <span class="s">&#039;Last seen &#039;</span>.$away-&gt;<span class="f">lastSeenAt</span>()-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;; expected back by &#039;</span>.$away-&gt;<span class="f">expectedBackAt</span>()-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&quot;. Call them, or check {$page}.&quot;</span>, $url));
         }
@@ -15455,13 +15543,12 @@ flowchart TD
      * Who hears about this absence, and where to send them.
      *
      * @param  Collection&lt;int, User&gt;  $operations
-     * @param  Collection&lt;int, User&gt;  $executives
      * @return array{0: Collection&lt;int, User&gt;, 1: string, 2: string, 3: string}
      */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">audience</span>(AwayLog $away, Collection $operations, Collection $executives): array
+    <span class="k">private</span> <span class="k">function</span> <span class="f">audience</span>(AwayLog $away, Collection $operations): array
     {
         <span class="k">if</span> ($away-&gt;user-&gt;employeeProfile-&gt;is_office_staff ?? <span class="k">true</span>) {
-            <span class="k">return</span> [$executives, <span class="s">&#039;the office&#039;</span>, <span class="s">&#039;Office Away&#039;</span>, <span class="f">route</span>(<span class="s">&#039;office-away&#039;</span>)];
+            <span class="k">return</span> [Heads::<span class="f">of</span>($away-&gt;user), <span class="s">&#039;the office&#039;</span>, <span class="s">&#039;Office Away&#039;</span>, <span class="f">route</span>(<span class="s">&#039;office-away&#039;</span>)];
         }
 
         <span class="k">return</span> [$this-&gt;<span class="f">operationsFor</span>($operations, $away-&gt;timeLog-&gt;dutyAssignment?-&gt;client?-&gt;region), <span class="s">&#039;the post&#039;</span>, <span class="s">&#039;Patrols&#039;</span>, <span class="f">route</span>(<span class="s">&#039;patrols&#039;</span>)];
@@ -18002,12 +18089,13 @@ flowchart LR
     <div><b>The icon: a scale, not a check</b><span>A checkmark reads as "done" or "approved", and in this app it means exactly that (signatures, "on this payslip"). Merits and demerits weigh good against bad, so the menu uses a balance scale. The buttons carry no "+": "Give a merit or demerit" already says what it does, and an icon on a long label only makes it heavier.</span></div>
     <div><b>12 months, one query</b><span><code>MeritTotalsQuery</code> sums merit and demerit points per person in one grouped query, for a whole page of employees. Old mistakes stop counting, so people can recover.</span></div>
   </div>
-  <details class="file" open><summary>app/Models/MeritRecord.php<span class="lines">187 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Models/MeritRecord.php<span class="lines">183 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Models;
 
 <span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\Role;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Database\Eloquent\Builder;
 <span class="k">use</span> Illuminate\Database\Eloquent\Model;
@@ -18117,9 +18205,9 @@ flowchart LR
     }
 
     <span class="c">/**
-     * Who may give this person a merit or demerit: whoever supervises them.
-     * Guards: Operation HQ, their region&#039;s Satellite Operation, HR. Office staff:
-     * HR. HR staff: the President or Vice President (like their leave and complaints). Never yourself.
+     * Who may give this person a merit or demerit: whoever supervises them (App\Support\Heads).
+     * Guards: Operation HQ, their region&#039;s Satellite Operation, HR. A Satellite Operation:
+     * Operation HQ. Other office staff: HR. HR staff: the President or Vice President. Never yourself.
      */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">canGive</span>(User $giver, User $employee): bool
     {
@@ -18133,16 +18221,9 @@ flowchart LR
 
         $employee-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;employeeProfile&#039;</span>);
 
-        <span class="k">if</span> ($employee-&gt;<span class="f">hasRole</span>(Role::Hr)) {
-            <span class="k">return</span> $giver-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">leadership</span>());
-        }
-
-        <span class="k">if</span> ($employee-&gt;employeeProfile-&gt;is_office_staff ?? <span class="k">true</span>) {
-            <span class="k">return</span> $giver-&gt;<span class="f">hasRole</span>(Role::Hr);
-        }
-
-        <span class="k">return</span> $giver-&gt;<span class="f">hasRole</span>(Role::Hr) || $giver-&gt;<span class="f">hasRole</span>(Role::OperationsHq)
-            || ($giver-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) &amp;&amp; $giver-&gt;<span class="f">canSeeEmployee</span>($employee));
+        <span class="c">// Their head (Heads: a Satellite&#039;s is Operation HQ); HR may also give a guard one.</span>
+        <span class="k">return</span> Heads::<span class="f">isHeadOf</span>($giver, $employee)
+            || (Heads::<span class="f">groupOf</span>($employee) === Heads::OPERATIONS &amp;&amp; $giver-&gt;<span class="f">hasRole</span>(Role::Hr));
     }
 
     <span class="c">/**
@@ -18171,7 +18252,9 @@ flowchart LR
 
             <span class="c">// Guards: all of them for Operation HQ; a Satellite&#039;s region only.</span>
             <span class="k">if</span> ($viewer-&gt;<span class="f">hasRole</span>(Role::OperationsHq)) {
-                $visible-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>));
+                <span class="c">// Guards, and the Satellite Operations it heads.</span>
+                $visible-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>))
+                    -&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.roles&#039;</span>, <span class="k">fn</span> (Builder $roles) =&gt; $roles-&gt;<span class="f">where</span>(<span class="s">&#039;role&#039;</span>, Role::SatelliteOperations-&gt;value));
             } <span class="k">elseif</span> ($viewer-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations)) {
                 $visible-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)-&gt;<span class="f">visibleTo</span>($viewer));
             }
@@ -18379,13 +18462,14 @@ stateDiagram-v2
     <div><b>Nothing automatic after</b><span>A dismissal tells HR to set Terminated and start the clearance and final pay; a suspension simply has no attendance to pay. A demerit can go with the decision (chapter 30).</span></div>
     <div><b>Who</b><span>Guards: Operation HQ, or their region's Satellite (the roadmap's "Operations only" holds for guards). Office staff: HR. HR staff: the President or Vice President. HR and the President or Vice President read them all; other HR staff never read an HR member's.</span></div>
   </div>
-  <details class="file" open><summary>app/Models/NoticeToExplain.php<span class="lines">226 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Models/NoticeToExplain.php<span class="lines">222 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Models;
 
 <span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\NteOutcome;
 <span class="k">use</span> App\Enums\Role;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Database\Eloquent\Builder;
 <span class="k">use</span> Illuminate\Database\Eloquent\Model;
@@ -18540,8 +18624,9 @@ stateDiagram-v2
 
     <span class="c">/**
      * Who may issue one to this person, hear it and decide: whoever supervises
-     * them. Guards: Operation HQ, or their region&#039;s Satellite Operation. Office
-     * staff: HR. HR staff: the President or Vice President. Never yourself.
+     * them (App\Support\Heads). Guards: Operation HQ, or their region&#039;s Satellite Operation.
+     * A Satellite Operation: Operation HQ. Other office staff: HR. HR staff: the President or
+     * Vice President. Never yourself.
      */</span>
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">canIssue</span>(User $issuer, User $employee): bool
     {
@@ -18555,16 +18640,8 @@ stateDiagram-v2
 
         $employee-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;employeeProfile&#039;</span>);
 
-        <span class="k">if</span> ($employee-&gt;<span class="f">hasRole</span>(Role::Hr)) {
-            <span class="k">return</span> $issuer-&gt;<span class="f">hasAnyRole</span>(...Role::<span class="f">leadership</span>());
-        }
-
-        <span class="k">if</span> ($employee-&gt;employeeProfile-&gt;is_office_staff ?? <span class="k">true</span>) {
-            <span class="k">return</span> $issuer-&gt;<span class="f">hasRole</span>(Role::Hr);
-        }
-
-        <span class="k">return</span> $issuer-&gt;<span class="f">hasRole</span>(Role::OperationsHq)
-            || ($issuer-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) &amp;&amp; $issuer-&gt;<span class="f">canSeeEmployee</span>($employee));
+        <span class="c">// Their head: the owner&#039;s chain, in one place.</span>
+        <span class="k">return</span> Heads::<span class="f">isHeadOf</span>($issuer, $employee);
     }
 
     <span class="c">/**
@@ -18598,7 +18675,9 @@ stateDiagram-v2
             }
 
             <span class="k">if</span> ($viewer-&gt;<span class="f">hasRole</span>(Role::OperationsHq)) {
-                $visible-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>));
+                <span class="c">// Guards, and the Satellite Operations it heads.</span>
+                $visible-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>))
+                    -&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.roles&#039;</span>, <span class="k">fn</span> (Builder $roles) =&gt; $roles-&gt;<span class="f">where</span>(<span class="s">&#039;role&#039;</span>, Role::SatelliteOperations-&gt;value));
             } <span class="k">elseif</span> ($viewer-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations)) {
                 $visible-&gt;<span class="f">orWhereHas</span>(<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="k">fn</span> (Builder $profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">false</span>)-&gt;<span class="f">visibleTo</span>($viewer));
             }
@@ -20520,6 +20599,7 @@ flowchart LR
     ['A guard\'s birthday is today. Who gets a bell?', ['Everyone in the company', 'HR, Operation HQ and the Satellite of the guard\'s region, unless the guard keeps it private', 'Only the guard', 'Only HR'], 1, 'SendBirthdayReminders: HR for everyone, Operations for guards (a Satellite its region). Never the age; nobody if birthday_private.'],
     ['A petty cash fund of ₱5,000 has ₱1,500 of expenses in a request still waiting for Accounting. What is the cash on hand?', ['₱5,000', '₱3,500', '₱1,500', '₱6,500'], 1, 'cashOnHand() = fund − expenses not yet replenished, which includes those in a pending request. Only a released request brings the cash back.'],
     ['A referred hire leaves 60 days in; the terms say 90. What happens on the referrer\'s next payslip after the due date?', ['The bonus is paid anyway', 'No bonus: the referral is closed and the referrer told', 'Half the bonus', 'HR decides by hand'], 1, 'PayDueReferralBonuses checks Referral::hireStayed(): still working, or a last day on or after the due date. Otherwise Forfeited.'],
+    ['A Satellite Operation files leave. Who decides it?', ['HR, after Operation HQ endorses it', 'Operation HQ, their head, outright', 'The President or VP', 'Their own region\'s Satellite'], 1, 'Heads: a Satellite\'s head is Operation HQ. LeaveRouting starts it at stage hq, and for office staff that stage decides (EndorseLeaveRequest skips office staff). HR still reads it; the President or VP monitor it.'],
     ['An Accounting clerk is still clocked in two hours after their shift ended. Who has been told?', ['Nobody: it only shows on the Attendance Log', 'The clerk (after 30 min), then HR, their head (after 2 hours)', 'Operation HQ', 'The President or VP'], 1, 'SendAttendanceAlerts reminds the employee first, then their head: HR for office staff like Accounting, the President or VP for HR, Operation HQ for a Satellite, both Operations for a guard. The minutes are HR\'s Alert rules.'],
     ['On Roles & Access, can one person be both HR and Admin?', ['Yes, tick both', 'No: one role per person; Employee is automatic for anyone with an employee record', 'Only the Super Admin can', 'Yes, if they are office staff'], 1, 'The picker is radio buttons (one job role). Access per role (Ability::roles()) didn\'t change; only the picker did.'],
     ['HR adds a Passport under Other IDs. What does the audit log record?', ['The passport number', 'That other_ids changed, not the number', 'Nothing', 'Only the label'], 1, 'other_ids is encrypted at rest (encrypted:array) and listed in EmployeeProfile::SENSITIVE, so AuditLogger::diff writes (changed) instead of the value.'],

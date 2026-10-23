@@ -2,7 +2,6 @@
 
 namespace App\Actions\Patrols;
 
-use App\Enums\Ability;
 use App\Enums\Role;
 use App\Models\AwayLog;
 use App\Models\SentAlert;
@@ -10,6 +9,7 @@ use App\Models\TimeLog;
 use App\Models\User;
 use App\Notifications\PatrolAlert;
 use App\Queries\Attendance\PatrolRoundsQuery;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -25,8 +25,8 @@ use Illuminate\Support\Facades\Notification;
  *  - someone away hasn't shared their location for a long while.
  * Merely running a little late, or a reminder to share, is never an alert.
  *
- * Guards' alerts go to Operation HQ and the region's Satellite Operation;
- * office staff's to the President or Vice President (monitor-office-away), like their leave.
+ * Guards' alerts go to Operation HQ and the region's Satellite Operation; office staff's to
+ * their head (App\Support\Heads), like their leave.
  */
 final class SendPatrolAlerts
 {
@@ -38,9 +38,8 @@ final class SendPatrolAlerts
     public function handle(CarbonImmutable $now): int
     {
         $operations = User::query()->notifiable([Role::OperationsHq, Role::SatelliteOperations])->with('roles')->get();
-        $executives = User::query()->notifiable(Ability::MonitorOfficeAway->roles())->get();
 
-        return $this->missedRounds($now, $operations) + $this->lateAway($now, $operations, $executives) + $this->overdueLocation($now, $operations, $executives);
+        return $this->missedRounds($now, $operations) + $this->lateAway($now, $operations) + $this->overdueLocation($now, $operations);
     }
 
     /**
@@ -85,9 +84,8 @@ final class SendPatrolAlerts
 
     /**
      * @param  Collection<int, User>  $operations
-     * @param  Collection<int, User>  $executives
      */
-    private function lateAway(CarbonImmutable $now, Collection $operations, Collection $executives): int
+    private function lateAway(CarbonImmutable $now, Collection $operations): int
     {
         $sent = 0;
 
@@ -96,7 +94,7 @@ final class SendPatrolAlerts
                 continue;
             }
 
-            [$recipients, $where, $page, $url] = $this->audience($away, $operations, $executives);
+            [$recipients, $where, $page, $url] = $this->audience($away, $operations);
             $sent += $this->send('away.late.'.$away->expectedBackAt()->format('YmdHis'), $away, $recipients,
                 new PatrolAlert($away->user->name, "Not back yet: {$away->minutesPastExpected($now)} min past {$away->expectedBackAt()->format('g:i A')} ({$away->reason->label()})", ($away->note ?? 'No note.')." Away from {$where} since {$away->left_at->format('g:i A')}; no more time asked. Call them, or approve it on {$page}.", $url));
         }
@@ -106,9 +104,8 @@ final class SendPatrolAlerts
 
     /**
      * @param  Collection<int, User>  $operations
-     * @param  Collection<int, User>  $executives
      */
-    private function overdueLocation(CarbonImmutable $now, Collection $operations, Collection $executives): int
+    private function overdueLocation(CarbonImmutable $now, Collection $operations): int
     {
         $sent = 0;
 
@@ -119,7 +116,7 @@ final class SendPatrolAlerts
 
             // Once per silence: keyed on the last time they shared, so a new
             // update and then another silence alerts again, but no repeats.
-            [$recipients, , $page, $url] = $this->audience($away, $operations, $executives);
+            [$recipients, , $page, $url] = $this->audience($away, $operations);
             $sent += $this->send('away.location.'.$away->lastSeenAt()->format('YmdHis'), $away, $recipients,
                 new PatrolAlert($away->user->name, 'No location shared for '.(int) $away->lastSeenAt()->diffInMinutes($now).' min while away ('.$away->reason->label().')', 'Last seen '.$away->lastSeenAt()->format('g:i A').'; expected back by '.$away->expectedBackAt()->format('g:i A').". Call them, or check {$page}.", $url));
         }
@@ -131,13 +128,12 @@ final class SendPatrolAlerts
      * Who hears about this absence, and where to send them.
      *
      * @param  Collection<int, User>  $operations
-     * @param  Collection<int, User>  $executives
      * @return array{0: Collection<int, User>, 1: string, 2: string, 3: string}
      */
-    private function audience(AwayLog $away, Collection $operations, Collection $executives): array
+    private function audience(AwayLog $away, Collection $operations): array
     {
         if ($away->user->employeeProfile->is_office_staff ?? true) {
-            return [$executives, 'the office', 'Office Away', route('office-away')];
+            return [Heads::of($away->user), 'the office', 'Office Away', route('office-away')];
         }
 
         return [$this->operationsFor($operations, $away->timeLog->dutyAssignment?->client?->region), 'the post', 'Patrols', route('patrols')];

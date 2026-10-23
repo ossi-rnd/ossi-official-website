@@ -47,18 +47,18 @@ function requestLeave(object $test, $who, LeaveType $type, string $start, string
 it('needs a medical certificate for sick leave from 2 days, before it can be approved', function () {
     $oneDay = requestLeave($this, $this->clerk, LeaveType::Sick, '2026-10-16', '2026-10-16');
     expect($oneDay->documentNeeded())->toBeNull();
-    app(ReviewLeaveRequest::class)->handle($oneDay, $this->executive, RequestStatus::Approved, null);
+    app(ReviewLeaveRequest::class)->handle($oneDay, $this->hr, RequestStatus::Approved, null);
 
     $threeDays = requestLeave($this, $this->clerk, LeaveType::Sick, '2026-10-20', '2026-10-22');
     expect($threeDays->documentNeeded())->toBe('A medical certificate');
-    expect(fn () => app(ReviewLeaveRequest::class)->handle($threeDays, $this->executive, RequestStatus::Approved, null))
+    expect(fn () => app(ReviewLeaveRequest::class)->handle($threeDays, $this->hr, RequestStatus::Approved, null))
         ->toThrow(ValidationException::class, 'Waiting for the document: a medical certificate');
 
     // Attached after filing: whoever decides is told again, then it can be approved.
     Notification::fake();
     app(AttachLeaveDocument::class)->handle($this->clerk, $threeDays, UploadedFile::fake()->image('certificate.jpg'));
-    Notification::assertSentTo($this->executive, LeaveAwaitingYou::class);
-    app(ReviewLeaveRequest::class)->handle($threeDays->fresh(), $this->executive, RequestStatus::Approved, null);
+    Notification::assertSentTo($this->hr, LeaveAwaitingYou::class);
+    app(ReviewLeaveRequest::class)->handle($threeDays->fresh(), $this->hr, RequestStatus::Approved, null);
     expect($threeDays->fresh()?->status)->toBe(RequestStatus::Approved);
 });
 
@@ -78,7 +78,8 @@ it('shows what the law gives and the proof needed, and flags a longer request to
     expect($long->exceedsEntitlement())->toBeTrue()
         ->and($long->documents)->toHaveCount(1);
 
-    Livewire::actingAs($this->executive)->test(LeaveRequests::class)
+    // The clerk's head is HR (App\Support\Heads): HR decides it.
+    Livewire::actingAs($this->hr)->test(LeaveRequests::class)
         ->call('startReview', $long->id)
         ->assertSee('This asks for more (9 days).')
         ->assertSee('birth-certificate.jpg');

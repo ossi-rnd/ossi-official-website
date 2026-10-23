@@ -37,7 +37,8 @@ final class EndorseLeaveRequest
     {
         $leave->loadMissing('user.employeeProfile.client');
 
-        if ($leave->status !== RequestStatus::Pending || $leave->user_id === $endorser->id || ! $endorser->can(Ability::EndorseGuardLeave->value)) {
+        // Only a guard's leave climbs by endorsement; an office staffer's head decides it outright.
+        if ($leave->status !== RequestStatus::Pending || $leave->user_id === $endorser->id || ! $endorser->can(Ability::EndorseGuardLeave->value) || $leave->user->isOfficeStaff()) {
             return null;
         }
 

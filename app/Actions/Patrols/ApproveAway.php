@@ -7,6 +7,7 @@ use App\Enums\AuditArea;
 use App\Models\AwayLog;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -20,20 +21,24 @@ final class ApproveAway
     public function __construct(private readonly AuditLogger $audit) {}
 
     /**
-     * Office staff's time away is the President or Vice President's to approve; guards', Operations'.
+     * Office staff's time away is their head's to approve (Heads); guards', Operations'.
      */
-    public static function requiredAbility(AwayLog $away): Ability
+    public static function canApprove(AwayLog $away, User $actor): bool
     {
         $away->loadMissing('user.employeeProfile');
 
-        return ($away->user->employeeProfile->is_office_staff ?? true) ? Ability::MonitorOfficeAway : Ability::ManagePatrols;
+        if ($away->user_id === $actor->id) {
+            return false;
+        }
+
+        return ($away->user->employeeProfile->is_office_staff ?? true)
+            ? Heads::isHeadOf($actor, $away->user)
+            : $actor->can(Ability::ManagePatrols->value) && $actor->canSeeEmployee($away->user);
     }
 
     public function handle(AwayLog $away, User $actor): AwayLog
     {
-        $away->loadMissing('user.employeeProfile');
-
-        if (! $actor->can(self::requiredAbility($away)->value) || ! $actor->canSeeEmployee($away->user) || $away->user_id === $actor->id) {
+        if (! self::canApprove($away, $actor)) {
             throw new AuthorizationException;
         }
 

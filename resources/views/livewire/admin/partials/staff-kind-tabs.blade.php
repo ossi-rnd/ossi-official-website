@@ -10,7 +10,8 @@
     @php $counts = $this->groupCounts; $shown = $this->shownGroup(); @endphp
     <div class="relative" x-data="{ shown: @js($shown) }">
         <div class="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-gray-200 px-4 dark:border-gray-800" role="tablist" aria-label="Whose requests">
-            @foreach (['office' => ['Office staff', 'yours to decide'], 'field' => ['Guards', 'monitor only']] as $value => [$label, $hint])
+            @foreach (['office' => 'Office staff', 'field' => 'Guards'] as $value => $label)
+                @php $hint = $this->groupHint($value); @endphp
                 <button type="button" role="tab" wire:click="showGroup('{{ $value }}')" x-on:click="shown = '{{ $value }}'"
                     aria-selected="{{ $shown === $value ? 'true' : 'false' }}" x-bind:aria-selected="(shown === '{{ $value }}').toString()"
                     {{-- Colours only from Alpine (object syntax adds AND removes them): drawn statically too,
@@ -19,7 +20,7 @@
                     x-bind:class="{ 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400': shown === '{{ $value }}', 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300': shown !== '{{ $value }}' }">
                     {{ $label }}
                     <span @class(['rounded-full px-1.5 text-xs', 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300' => $value === 'office' && $counts[$value] > 0, 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' => ! ($value === 'office' && $counts[$value] > 0)])>{{ $counts[$value] }}</span>
-                    <span class="hidden text-xs font-normal text-gray-400 sm:inline">· {{ $hint }}</span>
+                    @if ($hint !== '')<span class="hidden text-xs font-normal text-gray-400 sm:inline">· {{ $hint }}</span>@endif
                 </button>
             @endforeach
         </div>

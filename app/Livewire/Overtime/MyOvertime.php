@@ -5,6 +5,7 @@ namespace App\Livewire\Overtime;
 use App\Actions\Overtime\SubmitOvertimeRequest;
 use App\Livewire\Concerns\InteractsWithUser;
 use App\Models\OvertimeRequest;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
@@ -14,8 +15,8 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Ask for overtime. It goes to Operations (a guard) or the President or Vice President (office
- * staff) automatically: nobody picks a supervisor.
+ * Ask for overtime. It goes to the person's head automatically (App\Support\Heads): Operations
+ * for a guard, HR for Admin or Accounting, and so on. Nobody picks a supervisor.
  *
  * @property-read string|null $post
  * @property-read Collection<int, OvertimeRequest> $requests
@@ -58,10 +59,10 @@ class MyOvertime extends Component
         $this->dispatch('notify', message: 'Sent to '.$this->sentTo().'. Only approved overtime is paid.');
     }
 
-    /** Where it goes, automatically: "Operations" for a guard, "the President or Vice President" for office staff. */
+    /** Where it goes, automatically: their head (Heads), e.g. "Operations" for a guard, "HR" for Accounting. */
     public function sentTo(): string
     {
-        return $this->currentUser()->isOfficeStaff() ? 'the President or Vice President' : 'Operations';
+        return Heads::label($this->currentUser());
     }
 
     /**

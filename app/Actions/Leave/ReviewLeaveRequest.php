@@ -9,6 +9,7 @@ use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Notifications\RequestDecided;
 use App\Services\AuditLogger;
+use App\Support\Heads;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -16,36 +17,28 @@ use InvalidArgumentException;
 /**
  * Who decides depends on who's asking: HR decides guards' leave (final),
  * once the region's Satellite Operation and Operation HQ have endorsed it
- * (EndorseLeaveRequest); the President or Vice President decides office staff's.
+ * (EndorseLeaveRequest); an office staffer's head decides theirs (Heads: HR for Admin,
+ * Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR).
  */
 final class ReviewLeaveRequest
 {
     public function __construct(private readonly AuditLogger $audit) {}
 
     /**
-     * The gate for deciding this request. No HR profile (e.g. a Super Admin's
-     * own account) counts as office staff.
-     */
-    public static function requiredAbility(LeaveRequest $leaveRequest): Ability
-    {
-        $leaveRequest->loadMissing('user.employeeProfile');
-
-        return LeaveRequest::reviewAbilityFor($leaveRequest->user);
-    }
-
-    /**
-     * Why this reviewer can't decide it, or null when they can. The list shows
-     * the same text in place of the Review button.
+     * Why this reviewer can't decide it, or null when they can. The list shows the same text
+     * in place of the Review button. A guard's: HR, once Operations has endorsed it. An office
+     * staffer's: their head (Heads). No HR profile (e.g. a Super Admin's own account) counts
+     * as office staff.
      */
     public static function blockedReason(LeaveRequest $leaveRequest, User $reviewer): ?string
     {
-        $office = self::requiredAbility($leaveRequest) === Ability::ReviewOfficeLeave;
+        $leaveRequest->loadMissing('user.employeeProfile');
+        $office = $leaveRequest->user->isOfficeStaff();
 
         return match (true) {
             $leaveRequest->user_id === $reviewer->id => 'You cannot review your own request.',
-            ! $reviewer->can(self::requiredAbility($leaveRequest)->value) => $office
-                ? 'Office staff leave is approved by the President or Vice President.'
-                : 'Guards\' leave is approved by HR.',
+            $office && ! Heads::isHeadOf($reviewer, $leaveRequest->user) => 'Their head decides it: '.Heads::label($leaveRequest->user).'.',
+            ! $office && ! $reviewer->can(Ability::ReviewFieldLeave->value) => 'Guards\' leave is approved by HR.',
             // A guard's leave reaches HR only once Operation HQ has endorsed it.
             ! $office && $leaveRequest->stage !== null && $leaveRequest->stage->endorses() => "Waiting for {$leaveRequest->stage->label()} to endorse it.",
             ! $reviewer->canSeeEmployee($leaveRequest->user) => 'This employee is outside your region.',

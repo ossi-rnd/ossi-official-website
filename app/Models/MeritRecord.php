@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\Ability;
 use App\Enums\Role;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -113,9 +114,9 @@ class MeritRecord extends Model
     }
 
     /**
-     * Who may give this person a merit or demerit: whoever supervises them.
-     * Guards: Operation HQ, their region's Satellite Operation, HR. Office staff:
-     * HR. HR staff: the President or Vice President (like their leave and complaints). Never yourself.
+     * Who may give this person a merit or demerit: whoever supervises them (App\Support\Heads).
+     * Guards: Operation HQ, their region's Satellite Operation, HR. A Satellite Operation:
+     * Operation HQ. Other office staff: HR. HR staff: the President or Vice President. Never yourself.
      */
     public static function canGive(User $giver, User $employee): bool
     {
@@ -129,16 +130,9 @@ class MeritRecord extends Model
 
         $employee->loadMissing('employeeProfile');
 
-        if ($employee->hasRole(Role::Hr)) {
-            return $giver->hasAnyRole(...Role::leadership());
-        }
-
-        if ($employee->employeeProfile->is_office_staff ?? true) {
-            return $giver->hasRole(Role::Hr);
-        }
-
-        return $giver->hasRole(Role::Hr) || $giver->hasRole(Role::OperationsHq)
-            || ($giver->hasRole(Role::SatelliteOperations) && $giver->canSeeEmployee($employee));
+        // Their head (Heads: a Satellite's is Operation HQ); HR may also give a guard one.
+        return Heads::isHeadOf($giver, $employee)
+            || (Heads::groupOf($employee) === Heads::OPERATIONS && $giver->hasRole(Role::Hr));
     }
 
     /**
@@ -167,7 +161,9 @@ class MeritRecord extends Model
 
             // Guards: all of them for Operation HQ; a Satellite's region only.
             if ($viewer->hasRole(Role::OperationsHq)) {
-                $visible->orWhereHas('user.employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false));
+                // Guards, and the Satellite Operations it heads.
+                $visible->orWhereHas('user.employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false))
+                    ->orWhereHas('user.roles', fn (Builder $roles) => $roles->where('role', Role::SatelliteOperations->value));
             } elseif ($viewer->hasRole(Role::SatelliteOperations)) {
                 $visible->orWhereHas('user.employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false)->visibleTo($viewer));
             }

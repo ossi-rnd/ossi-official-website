@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\Ability;
 use App\Enums\RequestStatus;
 use App\Models\Concerns\RoutedByStaffKind;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -95,8 +96,8 @@ class OvertimeRequest extends Model
     }
 
     /**
-     * Who it went to: the supervisor picked on an older request, else Operations (a guard)
-     * or the President or Vice President (office staff). Extra time Operations added: who added it.
+     * Who it went to: the supervisor picked on an older request, else the person's head
+     * (Heads: Operations for a guard, HR for Accounting…). Extra time Operations added: who added it.
      */
     public function sentToLabel(): string
     {
@@ -108,7 +109,7 @@ class OvertimeRequest extends Model
 
         $this->loadMissing(['supervisor', 'user.employeeProfile']);
 
-        return $this->supervisor->name ?? ($this->user->isOfficeStaff() ? 'President or VP' : 'Operations');
+        return $this->supervisor->name ?? ucfirst(Heads::label($this->user));
     }
 
     /**

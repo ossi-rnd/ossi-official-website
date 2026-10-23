@@ -20,18 +20,19 @@ use Illuminate\Support\Facades\Notification;
 it('tells the employee their leave was approved, with the reviewer\'s note', function () {
     Notification::fake();
     $clerk = staff(Role::Accounting);
-    $executive = staff(Role::President);
+    // An accountant's head, who decides their leave (App\Support\Heads).
+    $hr = staff(Role::Hr);
     $leave = new LeaveRequest(['type' => 'vacation', 'start_date' => today()->addDays(3), 'end_date' => today()->addDays(4), 'reason' => 'Family trip']);
     $leave->user()->associate($clerk);
     $leave->save();
 
-    app(ReviewLeaveRequest::class)->handle($leave, $executive, RequestStatus::Approved, 'Enjoy, file the turnover first.');
+    app(ReviewLeaveRequest::class)->handle($leave, $hr, RequestStatus::Approved, 'Enjoy, file the turnover first.');
 
-    Notification::assertSentTo($clerk, RequestDecided::class, function (RequestDecided $notice) use ($clerk, $executive) {
+    Notification::assertSentTo($clerk, RequestDecided::class, function (RequestDecided $notice) use ($clerk, $hr) {
         $data = $notice->toArray($clerk);
 
         return str_starts_with($data['title'], 'Leave approved: ')
-            && $data['body'] === "{$executive->name} approved it. Note: Enjoy, file the turnover first."
+            && $data['body'] === "{$hr->name} approved it. Note: Enjoy, file the turnover first."
             && $data['url'] === route('leave')
             && $notice->via($clerk) === ['database', 'mail'];
     });

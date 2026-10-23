@@ -9,6 +9,7 @@ use App\Models\OvertimeRequest;
 use App\Models\User;
 use App\Notifications\RequestDecided;
 use App\Services\AuditLogger;
+use App\Support\Heads;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -17,34 +18,27 @@ use InvalidArgumentException;
  * Approving sets approved_minutes, which may be LESS than requested. Payroll
  * pays the smaller of logged and approved overtime, day by day.
  *
- * Who decides depends on who's asking, like leave: the President or Vice President decides
- * office staff's overtime; Operations, HR or Admin decide guards'.
+ * Who decides depends on who's asking, like leave: an office staffer's head (Heads: HR for
+ * Admin, Accounting, Operation HQ…; Operation HQ for a Satellite; the President or VP for HR);
+ * Operations, HR or Admin decide guards'.
  */
 final class ReviewOvertimeRequest
 {
     public function __construct(private readonly AuditLogger $audit) {}
 
-    public static function requiredAbility(OvertimeRequest $overtimeRequest): Ability
-    {
-        $overtimeRequest->loadMissing('user.employeeProfile');
-
-        return OvertimeRequest::reviewAbilityFor($overtimeRequest->user);
-    }
-
     /**
-     * Why this reviewer can't decide it, or null when they can: their own
-     * request, not their kind of request, or a guard outside a Satellite
-     * Operation's region.
+     * Why this reviewer can't decide it, or null when they can: their own request, not
+     * their head, not their kind of request, or a guard outside a Satellite's region.
      */
     public static function blockedReason(OvertimeRequest $overtimeRequest, User $reviewer): ?string
     {
-        $overtimeRequest->loadMissing('user');
+        $overtimeRequest->loadMissing('user.employeeProfile');
+        $office = $overtimeRequest->user->isOfficeStaff();
 
         return match (true) {
             $overtimeRequest->user_id === $reviewer->id => 'You cannot review your own request.',
-            ! $reviewer->can(self::requiredAbility($overtimeRequest)->value) => self::requiredAbility($overtimeRequest) === Ability::ReviewOfficeOvertime
-                ? 'Office staff overtime is approved by the President or Vice President.'
-                : 'Guards\' overtime is approved by Operations, HR or Admin.',
+            $office && ! Heads::isHeadOf($reviewer, $overtimeRequest->user) => 'Their head decides it: '.Heads::label($overtimeRequest->user).'.',
+            ! $office && ! $reviewer->can(Ability::ReviewOvertime->value) => 'Guards\' overtime is approved by Operations, HR or Admin.',
             ! $reviewer->canSeeEmployee($overtimeRequest->user) => 'This employee is outside your region.',
             default => null,
         };

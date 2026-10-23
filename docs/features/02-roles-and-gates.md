@@ -30,9 +30,9 @@
 | monitor-requests | Admin, HR, Super Admin, President, Vice President, Operation HQ, Satellite | Leave Requests and Overtime Requests (the lists) |
 | review-field-leave | HR, Super Admin | Deciding a **guard's** leave (final, after Operations endorses it) |
 | endorse-guard-leave | Satellite Operation (its region), Operation HQ | Endorsing a guard's leave up to HR |
-| review-office-leave | President, Vice President, Super Admin | Deciding **office staff's** leave (and seeing it at all) |
+| review-office-leave | President, Vice President, Super Admin | Deciding HR staff's leave (stage "executive"). Other office staff's leave is decided by their head (`Heads`) |
 | review-overtime | HR, Admin, Super Admin, Operation HQ, Satellite | Deciding a **guard's** overtime |
-| review-office-overtime | President, Vice President, Super Admin | Deciding **office staff's** overtime (and seeing it at all) |
+| review-office-overtime | President, Vice President, Super Admin | Monitoring office staff's overtime. Deciding it follows the head (`Heads`): the President or VP for HR staff's |
 | view-people | HR, Super Admin, Admin, Accounting, President, Vice President, Operation HQ, Satellite | Employees and Employee Profile (read-only) |
 | manage-people | HR, Super Admin | Add and edit employee records, 201 files |
 | view-pay-rates | HR, Accounting, Super Admin, President, Vice President | The pay rate card on an employee record |
@@ -50,7 +50,7 @@
 | manage-relievers | Operation HQ, Satellite, Super Admin | Relievers |
 | manage-roster | Operation HQ, Satellite (its region), Super Admin | Duty Roster, manual attendance |
 | manage-patrols | Operation HQ, Satellite (its region), Super Admin | Patrols: checkpoints, rounds, guards away from post |
-| monitor-office-away | President, Vice President, Super Admin | Office Away: office staff out of the office, their location, approving it |
+| monitor-office-away | President, Vice President, HR, Operation HQ, Super Admin | Office Away: office staff out of the office, their location. The President or VP see everyone; HR and Operation HQ see the people they head. The head approves (`Heads`) |
 | view-organization | President, Vice President, Super Admin | Organization: the headquarters chart and the field side (region → province → client → guards), read-only |
 | manage-documents | Admin, Super Admin | Documents (company, licenses, client & legal) |
 | manage-training | Admin, Super Admin | Training |
@@ -60,12 +60,12 @@
 | handle-hr-resignations | President, Vice President, Super Admin | An HR member's own resignation (`resignations.for_executive`), which HR never sees |
 | prepare-final-pay | Accounting, Super Admin | Final Pay: prepare, adjust, send for signatures; Cash Bonds ([27](27-final-pay-and-cash-bond.md)) |
 | sign-final-pay | Accounting, President, Vice President, Super Admin | Final Pay: open and sign; the President or Vice President signs last and releases it. Only these see final pay amounts |
-| give-merits | Operation HQ, Satellite Operation, HR, President, Vice President, Super Admin | Merits & Demerits. Per person (`MeritRecord::canGive`): guards by Operations (a Satellite in its region) or HR, office staff by HR, HR staff by the President or Vice President ([28](28-merits-and-demerits.md)) |
+| give-merits | Operation HQ, Satellite Operation, HR, President, Vice President, Super Admin | Merits & Demerits. Per person (`MeritRecord::canGive`, the head): guards by Operations (a Satellite in its region) or HR, a Satellite by Operation HQ, other office staff by HR, HR staff by the President or Vice President ([28](28-merits-and-demerits.md)) |
 | approve-reimbursements | President, Vice President, Super Admin | Reimbursements: approve or reject office staff's requests, never their own ([31](31-reimbursements.md)) |
 | file-deployment-claims | Operation HQ, Satellite Operation, Super Admin | Deployment Costs: file what a guard paid for a deployment (a Satellite: its region's guards; `Reimbursement::canFileFor`), paid on the guard's payslip once the President or Vice President approves ([31](31-reimbursements.md#deployment-costs-roadmap-5)) |
 | view-reimbursements | President, Vice President, Accounting, Super Admin | The Reimbursements page and every receipt; Accounting sees them but doesn't decide |
 | manage-merit-types | HR, Super Admin | The list of merit and demerit types and their points |
-| issue-notices-to-explain | Operation HQ, Satellite Operation, HR, President, Vice President, Super Admin | Notices to Explain. Per person (`NoticeToExplain::canIssue`): guards by Operations (a Satellite in its region), office staff by HR, HR staff by the President or Vice President; HR and the President or Vice President read them all ([29](29-notices-to-explain.md)) |
+| issue-notices-to-explain | Operation HQ, Satellite Operation, HR, President, Vice President, Super Admin | Notices to Explain. Per person (`NoticeToExplain::canIssue`, the head): guards by Operations (a Satellite in its region), a Satellite by Operation HQ, other office staff by HR, HR staff by the President or Vice President; HR and the President or Vice President read them all ([29](29-notices-to-explain.md)) |
 | handle-hr-complaints | President, Vice President, Super Admin | Complaints filed by HR staff (`complaints.for_executive`), which HR never sees |
 | manage-policies | Admin, HR, Super Admin | Editing the Company Policy page |
 
@@ -83,13 +83,27 @@ Roles & Access shows this same table, built from the enum.
   3. **HR** approves or rejects. HR can't decide before Operation HQ has endorsed.
 
   No Satellite account for the region (or a guard not deployed yet): it starts at step 2. Endorsers choose **Endorse** or **Not recommended** (a reason is required); either way it moves up, because only HR decides. Each step gets a bell and email (`LeaveAwaitingYou`) with the endorsements so far, and HR's review window shows them. `leave_requests.stage` says where a request is waiting ("With Operation HQ" on the list and on the guard's My Leave), `leave_endorsements` keeps each endorsement, and the routing lives in `App\Support\LeaveRouting`. The Leave Requests list has a **Waiting for me** filter, and the sidebar badge counts what's at your step.
-- **Office staff's** leave needs `review-office-leave`: the President or Vice President. A user with no HR profile counts as office staff.
-- Monitoring roles see every request, and in place of the Review button they see who decides it: "Office staff leave is approved by the President or Vice President." `ReviewLeaveRequest::blockedReason()` produces that text, and the Action enforces the same rule.
-- Overtime works the same way: a guard's needs `review-overtime` (Operations, HR, Admin; the President or Vice President only monitors it), office staff's needs `review-office-overtime` (the President or Vice President). When office staff file overtime, it goes to the President or Vice President automatically.
-- **Office staff's leave and overtime go to the President or Vice President account only** (`RoutedByStaffKind` on both models):
-  - only those who decide them see them in Leave / Overtime Requests (HR, Admin and Operations see guards' requests only);
-  - the President or Vice President gets a bell and email when one is filed (`RequestFiled`, sent by `NotifyExecutives`); a guard's request emails no one;
-  - the sidebar badges count what's waiting for **your** decision (`awaitingReviewBy`), so the President or Vice President's badge is office staff's requests, HR's is guards' leave.
+- **Office staff's** leave and overtime go to **their head**, who decides (`App\Support\Heads`, see "The chain of heads" below). A user with no HR profile counts as office staff.
+- Monitoring roles see the requests they're allowed to, and in place of the Review button they see who decides: "Their head decides it: HR." `ReviewLeaveRequest::blockedReason()` / `ReviewOvertimeRequest::blockedReason()` produce that text, and the Actions enforce the same rule.
+- Overtime: a guard's needs `review-overtime` (Operations, HR, Admin; the President or VP only monitors it); an office staffer's, their head. When office staff file overtime, their head is told automatically (`RequestFiled`).
+- **Who sees office staff's requests** (`RoutedByStaffKind` on both models): their head, plus the President or VP and the Super Admin, who monitor them all. Lists get **Office staff / Guards** tabs for everyone who sees both. The President or VP's office tab says "HR staff's are yours to decide". The sidebar badges count what's waiting for **your** decision.
+
+## The chain of heads (`App\Support\Heads`, the owner's rule, 2026-10-23)
+
+| Person | Their head |
+|---|---|
+| A guard | Operations: Operation HQ, and the Satellite of their client's region |
+| HR | the President or Vice President |
+| A Satellite Operation | Operation HQ |
+| Other office staff (Admin, Accounting, Operation HQ, Developer, staff with no role) | HR |
+
+One class answers both "who heads this person" (`Heads::of`, `Heads::label`) and "does X head Y" (`Heads::isHeadOf`). It's used for:
+- attendance alerts (missed clock-out, office staff not clocked in);
+- deciding office staff's leave and overtime;
+- watching and approving their time away (Office Away; `monitor-office-away` now also HR and Operation HQ, each seeing only the people they head);
+- Notices to Explain and merits.
+
+The Super Admin may act for any head, as backup. The President or VP still **see** every office staffer's requests and time away, and decide only HR staff's. A Satellite's leave waits at stage `hq`, where Operation HQ **decides** it (not endorses it, as for a guard). For Operation HQ, the "guards only" visibility rule includes the Satellites it heads.
 
 ## Regional scope (Satellite Operation)
 

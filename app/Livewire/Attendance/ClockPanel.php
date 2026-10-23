@@ -23,6 +23,7 @@ use App\Queries\Attendance\CurrentDutyQuery;
 use App\Queries\Attendance\PatrolRoundsQuery;
 use App\Support\DeviceCookie;
 use App\Support\DeviceLabel;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
@@ -235,7 +236,7 @@ class ClockPanel extends Component
         }
 
         unset($this->away);
-        $this->dispatch('notify', message: ($this->currentUser()->employeeProfile->is_office_staff ?? true) ? 'Location shared with the President or Vice President.' : 'Location shared with Operations.');
+        $this->dispatch('notify', message: 'Location shared with '.Heads::label($this->currentUser()).'.');
 
         return ['ok' => true, 'message' => 'Location shared.'];
     }

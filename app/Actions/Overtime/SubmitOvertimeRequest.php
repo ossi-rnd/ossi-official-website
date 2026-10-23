@@ -7,8 +7,8 @@ use App\Enums\Role;
 use App\Models\OvertimeRequest;
 use App\Models\User;
 use App\Notifications\RequestFiled;
+use App\Support\Heads;
 use App\Support\LeaveRouting;
-use App\Support\NotifyExecutives;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Notification;
@@ -16,10 +16,9 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * An employee asks for overtime. Nobody picks a supervisor: a guard's goes to
- * Operations (Operation HQ and their region's Satellite Operation are told),
- * office staff's to the President or Vice President. Who may decide is still by role
- * (ReviewOvertimeRequest): Operations, HR or Admin for guards, the President or Vice President
- * for office staff.
+ * Operations (Operation HQ and their region's Satellite Operation are told), office staff's
+ * to their head (Heads). Who may decide (ReviewOvertimeRequest): Operations, HR or Admin for
+ * guards, the head for office staff.
  */
 final class SubmitOvertimeRequest
 {
@@ -43,11 +42,11 @@ final class SubmitOvertimeRequest
         $overtime->user()->associate($user);
         $overtime->save();
 
-        // Office staff's: every Executive. A guard's: Operations.
-        NotifyExecutives::of($overtime);
+        // Office staff's: their head (Heads). A guard's: Operations.
+        $deciders = $user->isOfficeStaff() ? Heads::of($user) : self::operationsFor($user);
 
-        if (! $user->isOfficeStaff()) {
-            Notification::send(self::operationsFor($user), new RequestFiled($overtime));
+        if ($deciders->isNotEmpty()) {
+            Notification::send($deciders, new RequestFiled($overtime));
         }
 
         return $overtime;

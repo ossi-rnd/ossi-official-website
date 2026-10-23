@@ -1,5 +1,5 @@
 <div>
-    <x-ui.card title="Leave Requests" :description="$this->pendingCount.' pending. Guards\' leave goes Satellite Operation → Operation HQ → HR (final); office staff\'s goes to the President or Vice President.'">
+    <x-ui.card title="Leave Requests" :description="$this->pendingCount.' pending. Guards\' leave goes Satellite Operation → Operation HQ → HR (final). Office staff\'s goes to their head: HR, Operation HQ for a Satellite, the President or VP for HR.'">
         <x-slot:actions>
             <x-ui.select wire:model.live="statusFilter" aria-label="Filter by status">
                 <option value="pending">Pending</option>
@@ -67,8 +67,8 @@
                                     <button type="button" wire:click="startEndorse({{ $request->id }})" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Endorse</button>
                                 @elseif ($pending && $blocked === null)
                                     <button type="button" wire:click="startReview({{ $request->id }})" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Review</button>
-                                @elseif ($pending && ! auth()->user()->can(\App\Models\LeaveRequest::reviewAbilityFor($request->user)->value))
-                                    {{-- Not theirs to decide (e.g. the President or Vice President watching guards'): the status says where it is. --}}
+                                @elseif ($pending && $request->user_id !== auth()->id() && ! \App\Models\LeaveRequest::canDecideFor(auth()->user(), $request->user))
+                                    {{-- Not theirs to decide (e.g. the President or Vice President watching others'): the status says where it is. --}}
                                     <span class="text-xs text-gray-400">View only</span>
                                 @elseif ($pending)
                                     <span class="text-xs text-gray-500">{{ $blocked }}</span>

@@ -5,7 +5,7 @@
         $filtering = trim($search) !== '' || $reason !== '' || $region !== '';
         $counts = $this->statusCounts;
     @endphp
-        <x-ui.card :title="$isOffice ? 'Office staff out of the office' : 'Away from post'" :description="($isOffice ? 'Office staff who stepped out, and why.' : 'Guards who said they\'re leaving the post, and why.').' Each says when they\'ll be back and can add time. Running late is only flagged in amber; '.($isOffice ? 'the President or Vice President is' : 'Operations is').' alerted after '.config('attendance.away.location_alert_minutes').' min with no location, or '.config('attendance.away.late_alert_minutes').' min past their time.'">
+        <x-ui.card :title="$isOffice ? 'Office staff out of the office' : 'Away from post'" :description="($isOffice ? 'Office staff who stepped out, and why.' : 'Guards who said they\'re leaving the post, and why.').' Each says when they\'ll be back and can add time. Running late is only flagged in amber; '.($isOffice ? 'their head (HR, Operation HQ for a Satellite, the President or VP for HR) is' : 'Operations is').' alerted after '.config('attendance.away.location_alert_minutes').' min with no location, or '.config('attendance.away.late_alert_minutes').' min past their time.'">
             <x-slot:actions>
                 <input type="search" wire:model.live.debounce.300ms="search" placeholder="Search name…" aria-label="Search name" class="ui-field mt-0! sm:w-44">
                 <x-ui.select wire:model.live="reason" aria-label="Filter by reason">
@@ -66,7 +66,7 @@
                                 <x-person-link :user="$away->user" />
                                 <p class="truncate text-xs text-gray-500">{{ $placeOf($away) }}</p>
                             </div>
-                            @if (! $away->approved_at && $away->user_id !== auth()->id())
+                            @if (! $away->approved_at && \App\Actions\Patrols\ApproveAway::canApprove($away, auth()->user()))
                                 <button type="button" wire:click="approve({{ $away->id }})" wire:confirm="Approve {{ $away->user->name }}'s time away?" class="shrink-0 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Approve</button>
                             @endif
                         </div>
@@ -120,7 +120,7 @@
                                 </td>
                                 <td class="ui-td">{{ $placeOf($away) }}</td>
                                 <td class="ui-td text-right whitespace-nowrap">
-                                    @if (! $away->approved_at && $away->user_id !== auth()->id())
+                                    @if (! $away->approved_at && \App\Actions\Patrols\ApproveAway::canApprove($away, auth()->user()))
                                         <button type="button" wire:click="approve({{ $away->id }})" wire:confirm="Approve {{ $away->user->name }}'s time away?" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Approve</button>
                                     @elseif ($away->approver)
                                         <span class="text-xs text-gray-500">by {{ $away->approver->name }}</span>
@@ -396,7 +396,7 @@
                 </div>
             </div>
 
-            @if (! $away->returned_at && ! $away->approved_at && $away->user_id !== auth()->id())
+            @if (! $away->returned_at && ! $away->approved_at && \App\Actions\Patrols\ApproveAway::canApprove($away, auth()->user()))
                 <x-slot:footer>
                     <x-ui.button type="button" wire:click="approve({{ $away->id }})" wire:confirm="Approve {{ $away->user->name }}'s time away?">Approve time away</x-ui.button>
                 </x-slot:footer>

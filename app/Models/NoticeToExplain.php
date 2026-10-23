@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\Ability;
 use App\Enums\NteOutcome;
 use App\Enums\Role;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -159,8 +160,9 @@ class NoticeToExplain extends Model
 
     /**
      * Who may issue one to this person, hear it and decide: whoever supervises
-     * them. Guards: Operation HQ, or their region's Satellite Operation. Office
-     * staff: HR. HR staff: the President or Vice President. Never yourself.
+     * them (App\Support\Heads). Guards: Operation HQ, or their region's Satellite Operation.
+     * A Satellite Operation: Operation HQ. Other office staff: HR. HR staff: the President or
+     * Vice President. Never yourself.
      */
     public static function canIssue(User $issuer, User $employee): bool
     {
@@ -174,16 +176,8 @@ class NoticeToExplain extends Model
 
         $employee->loadMissing('employeeProfile');
 
-        if ($employee->hasRole(Role::Hr)) {
-            return $issuer->hasAnyRole(...Role::leadership());
-        }
-
-        if ($employee->employeeProfile->is_office_staff ?? true) {
-            return $issuer->hasRole(Role::Hr);
-        }
-
-        return $issuer->hasRole(Role::OperationsHq)
-            || ($issuer->hasRole(Role::SatelliteOperations) && $issuer->canSeeEmployee($employee));
+        // Their head: the owner's chain, in one place.
+        return Heads::isHeadOf($issuer, $employee);
     }
 
     /**
@@ -217,7 +211,9 @@ class NoticeToExplain extends Model
             }
 
             if ($viewer->hasRole(Role::OperationsHq)) {
-                $visible->orWhereHas('user.employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false));
+                // Guards, and the Satellite Operations it heads.
+                $visible->orWhereHas('user.employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false))
+                    ->orWhereHas('user.roles', fn (Builder $roles) => $roles->where('role', Role::SatelliteOperations->value));
             } elseif ($viewer->hasRole(Role::SatelliteOperations)) {
                 $visible->orWhereHas('user.employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false)->visibleTo($viewer));
             }

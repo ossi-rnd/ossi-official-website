@@ -9,6 +9,7 @@ use App\Enums\Region;
 use App\Livewire\Concerns\InteractsWithUser;
 use App\Models\AwayLog;
 use App\Queries\Attendance\AwayTrailQuery;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
@@ -138,16 +139,21 @@ class AwayMonitor extends Component
     }
 
     /**
-     * Absences this audience covers: guards in the viewer's reach, or office
-     * staff (an account with no HR profile counts as office staff).
+     * Absences this audience covers: guards in the viewer's reach, or office staff (an account
+     * with no HR profile counts as office staff): all of them for the President or VP and the
+     * Super Admin, else only those the viewer heads (Heads: HR, or Operation HQ for Satellites).
      *
      * @return Builder<AwayLog>
      */
     private function scoped(): Builder
     {
-        return AwayLog::query()->whereHas('user', fn (Builder $user) => $this->scope === 'office'
-            ? $user->where(fn (Builder $who) => $who->whereDoesntHave('employeeProfile')->orWhereHas('employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', true)))
-            : $user->visibleTo($this->currentUser())->whereHas('employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false)));
+        $viewer = $this->currentUser();
+
+        return AwayLog::query()->whereHas('user', fn (Builder $user) => match (true) {
+            $this->scope !== 'office' => $user->visibleTo($viewer)->whereHas('employeeProfile', fn (Builder $profile) => $profile->where('is_office_staff', false)),
+            Heads::seesAllOfficeStaff($viewer) => $user->officeStaff(),
+            default => Heads::constrainOfficeStaffHeadedBy($user, $viewer),
+        });
     }
 
     /** Regions are a filter only for guards, and only for viewers who see more than one. */

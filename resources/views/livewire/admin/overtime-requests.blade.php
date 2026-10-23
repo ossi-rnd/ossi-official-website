@@ -38,7 +38,7 @@
                                 @if ($request->status === \App\Enums\RequestStatus::Pending)
                                     @if (($blocked = \App\Actions\Overtime\ReviewOvertimeRequest::blockedReason($request, auth()->user())) === null)
                                         <button type="button" wire:click="startReview({{ $request->id }})" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Review</button>
-                                    @elseif (! auth()->user()->can(\App\Models\OvertimeRequest::reviewAbilityFor($request->user)->value))
+                                    @elseif ($request->user_id !== auth()->id() && ! \App\Models\OvertimeRequest::canDecideFor(auth()->user(), $request->user))
                                         <span class="text-xs text-gray-400">View only</span>
                                     @else
                                         <span class="text-xs text-gray-500">{{ $blocked }}</span>

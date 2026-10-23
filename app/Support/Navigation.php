@@ -76,7 +76,8 @@ final class Navigation
                 $can(Ability::ManageOffices) ? self::item('OSSI Offices', 'offices', 'building') : null,
                 $can(Ability::ManageRoster) ? self::item('Duty Roster', 'roster', 'calendar') : null,
                 $can(Ability::ManagePatrols) ? self::item('Patrols', 'patrols', 'shield', badge: AwayLog::query()->open()->whereHas('user', fn ($query) => $query->visibleTo($user)->whereHas('employeeProfile', fn ($profile) => $profile->where('is_office_staff', false)))->count()) : null,
-                $can(Ability::MonitorOfficeAway) ? self::item('Office Away', 'office-away', 'map-pin', badge: AwayLog::query()->open()->whereHas('user', fn ($query) => $query->where(fn ($who) => $who->whereDoesntHave('employeeProfile')->orWhereHas('employeeProfile', fn ($profile) => $profile->where('is_office_staff', true))))->count()) : null,
+                // Badge: office staff away right now, among those this viewer heads (all for the President or VP).
+                $can(Ability::MonitorOfficeAway) ? self::item('Office Away', 'office-away', 'map-pin', badge: AwayLog::query()->open()->whereHas('user', fn ($query) => Heads::seesAllOfficeStaff($user) ? $query->officeStaff() : Heads::constrainOfficeStaffHeadedBy($query, $user))->count()) : null,
                 $can(Ability::ManageRelievers) ? self::item('Relievers', 'relievers', 'arrows-right-left', badge: AbsenceNotice::query()->needsReliever()->visibleTo($user)->count()) : null,
                 // What guards paid for a deployment, claimed by Operations (roadmap 5).
                 $can(Ability::FileDeploymentClaims) ? self::item('Deployment Costs', 'deployment-claims', 'banknotes') : null,

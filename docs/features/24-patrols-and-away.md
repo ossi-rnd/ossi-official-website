@@ -99,9 +99,9 @@ The same on Patrols and Office Away, so the list stays readable with hundreds ou
 
 The client's **Today** view shows the same: **Away · Appointment** (since, back by, note; red only when it needs attention), and **On duty · round missed** in red.
 
-## 3. Office staff stepping out (the President or Vice President monitors)
+## 3. Office staff stepping out (their head monitors)
 
-Office staff do the same thing, in office words, and the **President / Vice President** monitors it, the same way the President or Vice President approves office staff's leave:
+Office staff do the same thing, in office words, and **their head** watches it (`App\Support\Heads`): HR for Admin, Accounting and Operation HQ; Operation HQ for a Satellite; the President or VP for HR. The President or VP also see everyone's:
 
 - My Attendance → **Stepping out of the office** → why → how long → a note → **Mark me out**. The office reasons, all needing a note (the hours are the fallback only, never shown):
 
@@ -116,8 +116,8 @@ Office staff do the same thing, in office words, and the **President / Vice Pres
   No lunch reason: the meal hour is inside the 9-hour duty, so going out to eat isn't logged. Guard reasons like "Checking other posts" are refused for office staff, and office reasons for guards.
 - While out, they can add time and are reminded to share their location every 15 minutes, as guards are. The distance is measured from the **head office** (`attendance.office`; set `OFFICE_NAME`, `OFFICE_LATITUDE`, `OFFICE_LONGITUDE`; the circle around it is 150 m). Without the coordinates, updates are still saved, just without a distance.
 - **Back at the office** ends it; clocking out does too.
-- **Office Away** (sidebar, `monitor-office-away`: President, Vice President and Super Admin) lists the office staff out right now: reason, note, since when, last location, position, and **Approve**. The sidebar badge counts them. **View location** opens the same map window, with the office instead of a post. "Back at the office today" lists the finished ones.
-- **Alerts** for office staff (no location for 30 min, or an hour past their own time) go to the **President / Vice President**, with a link to Office Away. Operations doesn't get them, and Patrols lists guards only.
+- **Office Away** (sidebar, `monitor-office-away`: President, Vice President, HR, Operation HQ and Super Admin; HR and Operation HQ see only the people they head, and only the head may **Approve**) lists the office staff out right now: reason, note, since when, last location, position, and **Approve**. The sidebar badge counts them. **View location** opens the same map window, with the office instead of a post. "Back at the office today" lists the finished ones.
+- **Alerts** for office staff (no location for 30 min, or an hour past their own time) go to **their head**, with a link to Office Away. Operations doesn't get them, and Patrols lists guards only.
 - Operations can't open Office Away or approve an office absence; the President or Vice President can't approve their own.
 
 ## Keeping it on record
@@ -133,7 +133,7 @@ Time away is attendance, so it's **kept, not cleared**. The screens just show to
 
 ## Alerts
 
-`php artisan app:send-patrol-alerts`, every **15 minutes** (`routes/console.php`). It sends bell and email to Operation HQ and the region's Satellite Operation (to the President or Vice President for office staff), **once each** (claimed in `sent_alerts`):
+`php artisan app:send-patrol-alerts`, every **15 minutes** (`routes/console.php`). It sends bell and email to Operation HQ and the region's Satellite Operation (to the office staffer's head for office staff), **once each** (claimed in `sent_alerts`):
 
 - "Round 3 missed (10:00–12:00 AM) at Makati CBD. Not scanned: Parking B1 ramp."
 - "Not back yet: 60 min past 11:00 AM (Errand for the client)… no more time asked. Call them, or approve it on Patrols." Sent once per expected time (`away.late_alert_minutes`, 60): adding time and then running an hour past the new time alerts again.

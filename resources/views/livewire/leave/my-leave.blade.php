@@ -17,7 +17,7 @@
                         <p><span class="font-medium text-gray-800 dark:text-gray-100">What the law gives ({{ $chosen->law() }}):</span> {{ $chosen->entitlement() }}.</p>
                         <p><span class="font-medium text-gray-800 dark:text-gray-100">Needed before it's approved:</span> {{ $chosen->document(1) }}. Attach it now or later from your history below.</p>
                         @if ($chosen->isConfidential())
-                            <p class="text-xs text-gray-500 dark:text-gray-400">Confidential: it goes straight to {{ auth()->user()?->isOfficeStaff() ? 'the President or Vice President' : 'HR' }}, not through Operations, and only they see it.</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Confidential: it goes straight to {{ auth()->user()?->isOfficeStaff() ? \App\Support\Heads::label(auth()->user()) : 'HR' }}, not through Operations, and only they see it.</p>
                         @endif
                         @if ($days !== null && $chosen->maxDays() !== null && $days > $chosen->maxDays())
                             <p class="text-xs text-gray-500 dark:text-gray-400">{{ $days }} days is more than the law gives; whoever approves it will see that.</p>

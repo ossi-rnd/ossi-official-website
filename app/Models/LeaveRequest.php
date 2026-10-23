@@ -8,6 +8,7 @@ use App\Enums\LeaveType;
 use App\Enums\RequestStatus;
 use App\Enums\Role;
 use App\Models\Concerns\RoutedByStaffKind;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -54,19 +55,18 @@ class LeaveRequest extends Model
         $this->scopeVisibleByStaffKind($query, $viewer);
 
         $field = $viewer->can(Ability::ReviewFieldLeave->value);
-        $office = $viewer->can(Ability::ReviewOfficeLeave->value);
+        $allOffice = Heads::seesAllOfficeStaff($viewer);
 
-        if (! ($field && $office)) {
-            $query->where(function (Builder $shown) use ($field, $office) {
+        if (! ($field && $allOffice)) {
+            $query->where(function (Builder $shown) use ($field, $allOffice, $viewer) {
                 $shown->whereNotIn('type', LeaveType::confidentialValues());
 
                 if ($field) {
                     $shown->orWhereHas('user', fn (Builder $user) => $user->fieldStaff());
                 }
 
-                if ($office) {
-                    $shown->orWhereHas('user', fn (Builder $user) => $user->officeStaff());
-                }
+                // An office staffer's confidential leave: only their head (or the President or VP).
+                $shown->orWhereHas('user', fn (Builder $user) => $allOffice ? $user->officeStaff() : Heads::constrainOfficeStaffHeadedBy($user, $viewer));
             });
         }
     }
@@ -104,19 +104,18 @@ class LeaveRequest extends Model
     }
 
     /**
-     * Who may open its documents: the employee, and whoever decides it (HR for
-     * guards, the President or Vice President for office staff), within their region. Not the
-     * endorsers: medical and VAWC papers are sensitive (Data Privacy Act).
+     * Who may open its documents: the employee, and whoever decides it (HR for guards, the
+     * office staffer's head), within their region. Not the endorsers: medical and VAWC papers
+     * are sensitive (Data Privacy Act).
      */
     public function documentsVisibleTo(User $viewer): bool
     {
         $this->loadMissing('user.employeeProfile');
 
-        return $viewer->id === $this->user_id
-            || ($viewer->can(self::reviewAbilityFor($this->user)->value) && $viewer->canSeeEmployee($this->user));
+        return $viewer->id === $this->user_id || self::canDecideFor($viewer, $this->user);
     }
 
-    /** Office staff's leave: the President or Vice President. Guards': HR, after Operations' endorsements. */
+    /** Guards': HR, after Operations' endorsements. Office staff's: their head (Heads); 'office' is the President or VP's gate. */
     public static function reviewAbilities(): array
     {
         return ['office' => Ability::ReviewOfficeLeave, 'field' => Ability::ReviewFieldLeave];

@@ -13,8 +13,8 @@ use Illuminate\Notifications\Notification;
 
 /**
  * A leave request is waiting for you: to endorse (Satellite Operation,
- * Operation HQ) or to decide (HR for guards, the President or Vice President for office
- * staff). Includes the endorsements so far.
+ * Operation HQ) or to decide (HR for guards; an office staffer's head, App\Support\Heads).
+ * Includes the endorsements so far.
  */
 final class LeaveAwaitingYou extends Notification implements ShouldQueue
 {

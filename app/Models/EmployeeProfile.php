@@ -173,9 +173,10 @@ class EmployeeProfile extends Model
     public function scopeVisibleTo(Builder $query, User $viewer): void
     {
         if (! $viewer->isRegionallyLimited()) {
-            // Operation HQ (no view-office-staff) looks after guards only.
+            // Operation HQ (no view-office-staff) looks after guards, and heads the Satellite Operations.
             if (! $viewer->can(Ability::ViewOfficeStaff->value)) {
-                $query->where('is_office_staff', false);
+                $query->where(fn (Builder $who) => $who->where('is_office_staff', false)
+                    ->when($viewer->hasRole(Role::OperationsHq), fn (Builder $who) => $who->orWhereHas('user.roles', fn (Builder $roles) => $roles->where('role', Role::SatelliteOperations->value))));
             }
 
             return;

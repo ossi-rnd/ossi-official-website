@@ -8,7 +8,9 @@ namespace App\Enums;
  * A guard's leave climbs: the region's Satellite Operation endorses to
  * Operation HQ, Operation HQ endorses to HR, and HR decides (final). With no
  * Satellite account for the guard's region it starts at Operation HQ.
- * Office staff's leave goes straight to the President or Vice President.
+ * Office staff's leave goes straight to their head, who decides (App\Support\Heads): HR, or
+ * Operation HQ for a Satellite (stage "hq", deciding, not endorsing), or the President or VP
+ * for HR (stage "executive").
  */
 enum LeaveStage: string
 {
