@@ -96,6 +96,19 @@ return [
     ],
 
     /*
+    | Missed clock-outs and office staff who haven't clocked in (SendAttendanceAlerts,
+    | every 5 minutes). Starting values only: HR sets the real ones on the Attendance
+    | Log → Alert rules (SaveAttendanceAlertRules, audited). All four are placeholders,
+    | not OSSI policy. Work days are ISO weekdays: 1 = Monday … 7 = Sunday.
+    */
+    'alerts' => [
+        'clock_out_reminder_minutes' => 30,
+        'clock_out_escalate_minutes' => 120,
+        'office_clock_in_reminder_minutes' => 30,
+        'office_work_days' => [1, 2, 3, 4, 5],
+    ],
+
+    /*
     | A guard on the roster who hasn't clocked in when their grace period ends,
     | with no notice and no leave, is a no-show (DetectNoShows, every 5 minutes):
     | Operations is alerted and the post goes on the Relievers board. Still

@@ -4,6 +4,15 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-22
 
+**Attendance alerts: missed clock-outs and office staff not clocked in**
+- Before, only a guard missing a rostered duty raised an alert (a no-show, to Operations). A forgotten clock-out showed only on the Attendance Log, and an office staffer who never clocked in told nobody.
+- Now `app:send-attendance-alerts` runs every 5 minutes (`SendAttendanceAlerts`):
+  - **Missed clock-out:** the employee is reminded first ("clock out now, or tell your supervisor the real time"). If it's still open later, their **head** is told: Operations (Operation HQ and the region's Satellite) for a guard, the President or VP for office staff.
+  - **Office staff not clocked in** on a work day (not on approved leave, not a holiday): the employee is reminded, and the President or VP gets **one summary bell per batch**, not one per person.
+  - Each alert goes once (`sent_alerts`).
+- The times and office work days are **HR's rules in the app**: Attendance Log → **Alert rules** → Change (`SaveAttendanceAlertRules`, audited). The starting values are my defaults, to confirm: remind after 30 min, tell the head after 120 min, office clock-in reminder 30 min after the grace period, office days Mon–Fri. Office staff have no roster, so the work days are how a rest day is told from a missed day.
+- Test: `AttendanceAlertsTest`.
+
 **GitHub CI fixed: emails had no sender**
 - The first CI run on GitHub failed: 36 of 897 tests stopped with "An email must have a From or a Sender header". On GitHub, `.env` is a copy of `.env.example`, whose `MAIL_FROM_ADDRESS=` was **blank**. A blank value isn't "missing", so the fallback in `config/mail.php` never applied. It passed on the office PC only because the real `.env` sets the address. Now `phpunit.xml` sets `MAIL_FROM_ADDRESS` and `MAIL_FROM_NAME` for tests, and `.env.example` has a placeholder address. I found it by running the committed code in a fresh clone, the same way CI does (`composer setup`, then `composer ci:check`).
 

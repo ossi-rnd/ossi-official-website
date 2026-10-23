@@ -194,6 +194,9 @@
         <x-slot:footer>{{ $this->logs->links() }}</x-slot:footer>
     </x-ui.card>
 
+    {{-- When a missed clock-out or a missing clock-in is alerted, and to whom (HR changes it). --}}
+    <div class="mt-6"><livewire:attendance.alert-rules /></div>
+
     {{-- The selfie, big. Closes only with ✕ or Esc: a stray tap outside no longer shuts it. --}}
     <div x-show="open" x-cloak x-transition.opacity role="dialog" aria-modal="true" aria-label="Selfie" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-8 backdrop-blur-sm">
         <figure class="relative">

@@ -37,6 +37,9 @@ Schedule::command('app:send-patrol-alerts')->everyFifteenMinutes()->withoutOverl
 
 Schedule::command('app:detect-no-shows')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
+// Missed clock-outs (employee, then their head) and office staff not clocked in.
+Schedule::command('app:send-attendance-alerts')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
+
 Schedule::command('app:close-forgotten-aways')->everyFifteenMinutes()->withoutOverlapping()->onOneServer();
 
 Schedule::command('app:prune-away-locations')->dailyAt('02:30')->withoutOverlapping()->onOneServer();

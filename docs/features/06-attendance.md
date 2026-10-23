@@ -50,6 +50,16 @@ RecordPunch::handle()
 - **HTTPS is required** for camera and GPS: `herd secure ossi_official_site` locally. Chrome also treats `localhost` as secure.
 - In local mode a dashed "simulate capture" button lets you punch from a desktop without a camera.
 
+## Alerts when a clock-in or clock-out is missing
+
+| Case | First | Then |
+|---|---|---|
+| Guard on the roster, no clock-in after the grace period | `DetectNoShows`: Operations (region's Satellite, then Operation HQ), Relievers board | — |
+| Anyone still clocked in after the shift | the employee, `clock_out_reminder_minutes` after the shift end | their head, `clock_out_escalate_minutes` after: Operations for a guard (HQ + region's Satellite), President / VP for office staff |
+| Office staffer, no clock-in on a work day | the employee, grace + `office_clock_in_reminder_minutes` after the start | one summary bell per batch to the President / VP |
+
+`SendAttendanceAlerts` (`app:send-attendance-alerts`, every 5 minutes) does the last two rows. It skips approved leave, holidays, and days that aren't office work days. Each alert is claimed once in `sent_alerts`. The numbers and office work days are HR's: Attendance Log → **Alert rules** (`App\Support\AttendanceAlertRules`, `SaveAttendanceAlertRules`, audited; starting values in `config/attendance.php` `alerts`). Office staff have no roster, so the work days are what tell a rest day from a missed one.
+
 ## Screens
 
 - **My Attendance**: today card, punch modal, history (7/15/30 days, monthly DTR, yearly rollup with charts, CSV export) and the punch log with photos.

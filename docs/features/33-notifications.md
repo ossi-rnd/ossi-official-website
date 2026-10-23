@@ -49,6 +49,8 @@ Last audited 2026-10-22, across all 172 Actions. The audit added the **New** row
 | Leave to endorse or decide | the next person in the chain | LeaveAwaitingYou |
 | Overtime filed | Operations / HR / the President or VP | RequestFiled |
 | Daily rate needed for a new hire | Accounting | DailyRateNeeded |
+| Forgot to clock out (after the shift) | the employee, then their head: Operations for a guard, the President or VP for office staff | **New** UpdateNotice (SendAttendanceAlerts) |
+| Office staffer not clocked in on a work day | the employee, plus one summary per batch to the President or VP | **New** UpdateNotice (SendAttendanceAlerts) |
 | Absence reported, no-show, guard arrived | Operations (the region's Satellite, then HQ) | AbsenceNoticeFiled, NoShowAlert |
 | Patrol round missed, time away overdue | Operations / the President or VP | PatrolAlert |
 | Other phone used to clock in | Operation HQ, the region's Satellite, HR | OtherPhoneUsed |

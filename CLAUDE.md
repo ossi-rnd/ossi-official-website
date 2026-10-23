@@ -35,7 +35,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 
 1. Pint (`vendor/bin/pint <paths>`; `--dirty` needs git), PHPStan (`vendor/bin/phpstan analyse --memory-limit=1G`), and the **full** suite (`php artisan test --parallel`) all pass. Run `php artisan view:cache` after Blade edits, and `npm run build` after JS or CSS changes.
 2. `docs/CHANGELOG.md` gets an entry under today's date, and the right `docs/features/*.md` is updated.
-3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 157 on 2026-10-22). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
+3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 158 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
 4. Mention honestly anything that went wrong, and how it was fixed.
 
 ## Safety rules (learned the hard way)
@@ -74,6 +74,6 @@ The repo carries the code and docs. These do **not** travel through git, on purp
 ## Open items (2026-10-22)
 
 - **Owner to decide:** whether to block HR from editing their own employee record; and whether to accept old-format phones, names and IDs until they're edited (today an old value must be corrected on the next save).
-- **Defaults to confirm:** referral bonus ₱1,000 after 90 days, and the bonus treated as not taxable (₱90k ceiling); petty cash "Running low" below 25%; the reminder times 7:15 (birthdays) and 7:20 (radio permits).
+- **Defaults to confirm:** attendance alerts (clock-out reminder 30 min after the shift, the head after 120 min, office clock-in reminder 30 min after grace, office days Mon–Fri; HR can change them on the Attendance Log); referral bonus ₱1,000 after 90 days, and the bonus treated as not taxable (₱90k ceiling); petty cash "Running low" below 25%; the reminder times 7:15 (birthdays) and 7:20 (radio permits).
 - **Not built yet:** bulletin board, donations, top performing guards (the owner asked; questions are pending); client billing; native mobile app; Laravel Cloud deployment.
 - **The owner's step:** create the President / VP accounts with `php artisan app:create-super-admin <email> "<name>" --role=president|vice-president`.
