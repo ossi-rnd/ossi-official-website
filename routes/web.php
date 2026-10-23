@@ -39,7 +39,6 @@ use App\Livewire\Admin\Employees;
 use App\Livewire\Admin\Equipment;
 use App\Livewire\Admin\FinalPays;
 use App\Livewire\Admin\Holidays;
-use App\Livewire\Admin\LateDeductionSettings;
 use App\Livewire\Admin\LeaveRequests;
 use App\Livewire\Admin\LoadRequests;
 use App\Livewire\Admin\Merits;
@@ -166,7 +165,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware(Ability::ManagePayroll->middleware())->group(function () {
         Route::get('/payroll', Payroll::class)->name('payroll');
-        Route::get('/late-deductions', LateDeductionSettings::class)->name('late-deductions');
         Route::get('/tax-settings', TaxSettings::class)->name('tax-settings');
         Route::get('/thirteenth-month', ThirteenthMonth::class)->name('thirteenth-month');
         Route::get('/daily-rates', DailyRates::class)->name('daily-rates');

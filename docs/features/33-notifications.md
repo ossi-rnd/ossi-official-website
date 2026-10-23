@@ -70,6 +70,6 @@ Last audited 2026-10-22, across all 172 Actions. The audit added the **New** row
 
 ## Deliberately not notified
 
-- Settings (shifts, holidays, rates per position, tax tables, late-deduction rules, clients, offices): they affect many people and show where they apply.
+- Settings (shifts, holidays, rates per position, tax tables, clients, offices): they affect many people and show where they apply.
 - The person's own actions (filing, cancelling, clocking in).
 - Records of people who no longer work here.

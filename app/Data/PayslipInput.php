@@ -13,7 +13,6 @@ final readonly class PayslipInput
      * @param  int  $overtimeMinutes  already capped per day at the APPROVED request
      * @param  array<string, int>  $holidayDaysWorked  HolidayType value => days worked
      * @param  list<LoanLine>  $loans
-     * @param  list<LateBracket>  $lateBrackets  empty = no brackets configured
      * @param  list<CarryoverLine>  $carryovers  owed from earlier payslips that couldn't cover them
      * @param  list<AdjustmentLine>  $adjustments  APPROVED adjustments for this run
      * @param  MonthToDate|null  $monthToDate  earlier payslips this month; null = this run is the whole month
@@ -26,7 +25,6 @@ final readonly class PayslipInput
         public int $overtimeMinutes,
         public array $holidayDaysWorked = [],
         public array $loans = [],
-        public array $lateBrackets = [],
         public array $carryovers = [],
         public array $adjustments = [],
         public ?MonthToDate $monthToDate = null,

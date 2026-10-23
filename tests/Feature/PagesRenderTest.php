@@ -18,7 +18,7 @@ beforeEach(fn () => $this->seed(DatabaseSeeder::class));
 it('renders every page for the Super Admin', function () {
     $admin = User::query()->where('email', 'superadmin@example.test')->sole();
 
-    foreach (['dashboard', 'attendance-log', 'leave-requests', 'overtime-requests', 'employees', 'payroll', 'late-deductions', 'tax-settings',
+    foreach (['dashboard', 'attendance-log', 'leave-requests', 'overtime-requests', 'employees', 'payroll', 'tax-settings',
         'holidays', 'shifts', 'roles', 'audit-log', 'announcements', 'load-requests', 'profile', 'account-settings', 'help'] as $route) {
         $this->actingAs($admin)->get(route($route))->assertOk();
     }

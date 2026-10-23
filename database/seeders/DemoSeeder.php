@@ -241,7 +241,7 @@ class DemoSeeder extends Seeder
         foreach ([
             ['How do I clock in?', "Open My Attendance and tap Clock In. Allow the camera and location when your browser asks.\nYour selfie and GPS position are saved with the time."],
             ['Why does my payslip say "Estimate"?', 'Until Accounting generates your payslip, the figures are calculated live from your attendance so far. They become final once generated.'],
-            ['How is the late deduction computed?', 'Minutes after your shift start plus the grace period are added up for the pay period. The total falls into a late bracket that sets the deduction. Open "Show days" on your payslip to see every late day.'],
+            ['How is the late deduction computed?', 'Only the minutes after your shift start plus the grace period count, and only exactly those minutes are deducted, at your hourly rate (daily rate ÷ 8). Being 5 minutes late costs 5 minutes\' pay, never a whole hour. Open "Show days" on your payslip to see every late day.'],
             ['Where do I file leave or overtime?', 'Use My Leave or My Overtime. You can see the date each request was filed and its status.'],
             ['Who do I contact about a payroll error?', 'Contact Accounting. Corrections are added to the next payroll, so a past payslip is never changed.'],
         ] as $index => [$question, $answer]) {

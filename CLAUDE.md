@@ -21,6 +21,8 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 - Keep icons on buttons, unless the owner asks to remove one (they removed the plus on "Add radio").
 - Every `dark:bg` needs a `dark:hover`; a light hover background (`hover:bg-white`, `-50`, `-100`, `-200`) always needs a `dark:hover:bg-…`, also inside `x-bind:class` / `@class` strings. Coloured text 500-700 needs a `dark:text-…-400`. A `hover:text-gray-700/800/900` needs a `dark:hover:text-…`. `tests/Unit/DarkModeColorsTest.php` enforces all of these. Run `npm run build` after adding classes.
 - Error pages (403/404/419/500/503) are always full screen, even from a Livewire click (`resources/js/error-pages.js`).
+- Checkboxes and radios are drawn once in `resources/css/app.css` (dark box in dark mode, blue tick). Use a plain `<input type="checkbox">` or `x-ui.checkbox`; don't restyle one per page.
+- A value picked from a list is shown locked with **Change** (like the guard on Deployment Costs), not left in an editable box; free typing only behind an explicit "Not on the list? Type it".
 - Clean input: government IDs are digits in the agency's format (`App\Support\GovernmentId`). Phones and names go through `App\Support\PhilippineFormats`. Fields drop wrong characters as they're typed, and the server checks again.
 
 **Product decisions**
@@ -29,6 +31,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 - Office positions mirror the roles: Admin, HR, Accounting, IT, Operations Head, Satellite Operations Officer (`Position::for(true)`). Security Manager, President and VP are retired as positions.
 - Clients (guards' sites) and OSSI Offices (head office and branches) are separate tables with the same location picker. There is **no** "OSSI Head Office" office pre-created; the owner adds their own.
 - **The chain of heads** (`App\Support\Heads`, used everywhere a "head" acts): a guard → Operation HQ + their region's Satellite (endorse) → HR decides leave; HR, Operation HQ and Accounting → the President or VP; a Satellite Operation → Operation HQ; other office staff (Admin, Developer…) → HR. The head **decides** office staff's leave and overtime, watches and approves their time away, gets their attendance alerts, and issues their Notices to Explain and merits. The President or VP still *see* all office staff's, and HR every non-HR staffer's (they monitor); HR is also copied on attendance alerts for staff it doesn't head (`Heads::toTell`, as timekeeper). Operation HQ and Accounting moved from HR to the President or VP on 2026-10-23, the owner's choice after comparing with the usual agency structure. Nobody heads the Super Admin, President or VP. The Super Admin may act as backup. Use `Heads` for any new "who supervises whom" need; never hand-write the chain again.
+- **Late is exact minutes** after grace at the hourly rate (daily ÷ 8). No brackets, no rounding up to blocks of time (that deducts time worked, Art. 113). Removed 2026-10-23; don't add them back without the owner and counsel.
 - Notify everyone affected: any Action that changes something about **someone other than the actor** tells them (`UpdateNotice::tell()` / `tellProfile()` for plain updates). Settings and the actor's own changes stay quiet.
 - The privacy notice never relies on "consent" (a test enforces it). Bump `config/privacy.php` `version` when its text changes (now `2026-10-22.1`; `.env` may override with `PRIVACY_NOTICE_VERSION`).
 
@@ -36,7 +39,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 
 1. Pint (`vendor/bin/pint <paths>`; `--dirty` needs git), PHPStan (`vendor/bin/phpstan analyse --memory-limit=1G`), and the **full** suite (`php artisan test --parallel`) all pass. Run `php artisan view:cache` after Blade edits, and `npm run build` after JS or CSS changes.
 2. `docs/CHANGELOG.md` gets an entry under today's date, and the right `docs/features/*.md` is updated.
-3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 173 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
+3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 178 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
 4. Mention honestly anything that went wrong, and how it was fixed.
 
 ## Safety rules (learned the hard way)

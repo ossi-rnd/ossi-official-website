@@ -121,7 +121,7 @@
                             </tbody>
                         </table>
                         <p class="border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800">
-                            The deduction uses the late brackets on the period's total of {{ $payslip->lateMinutes }} minutes.
+                            The deduction is exactly these {{ $payslip->lateMinutes }} minutes (after the grace period) at the hourly rate: the daily rate ÷ 8.
                         </p>
                     </div>
                 @endif

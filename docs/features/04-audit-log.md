@@ -21,7 +21,7 @@ Exception: a refused registration is recorded *after* the transaction, because n
 
 ## What is recorded
 
-Registration (succeeded / failed + reason), privacy acknowledgement, role changes, employee record created/updated, leave approved/rejected/cancelled, overtime approved/rejected, payroll run created/advanced/paid, payslip generated, deductions added/paused/deleted, shifts, holidays and late brackets saved/deleted.
+Registration (succeeded / failed + reason), privacy acknowledgement, role changes, employee record created/updated, leave approved/rejected/cancelled, overtime approved/rejected, payroll run created/advanced/paid, payslip generated, deductions added/paused/deleted, shifts and holidays saved/deleted (late brackets were until 2026-10-23, when they were removed).
 
 The Audit Log page (`view-system-logs`) filters by area, text and date, and shows old values struck through next to new ones.
 

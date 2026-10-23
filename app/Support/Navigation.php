@@ -73,7 +73,6 @@ final class Navigation
                 // Badges count what's waiting for YOUR decision (office staff's go to the President or Vice President).
                 $can(Ability::MonitorRequests) ? self::item('Leave Requests', 'leave-requests', 'clipboard', badge: LeaveRequest::query()->awaitingActionBy($user)->count()) : null,
                 $can(Ability::MonitorRequests) ? self::item('Overtime Requests', 'overtime-requests', 'clock-plus', badge: OvertimeRequest::query()->awaitingReviewBy($user)->count()) : null,
-                $can(Ability::ManagePayroll) ? self::item('Late Deduction', 'late-deductions', 'clock-alert') : null,
                 $can(Ability::ManagePayroll) ? self::item('Tax & Contributions', 'tax-settings', 'scroll') : null,
                 // The sites guards are deployed to: set up by Operation HQ before HR onboards guards there.
                 $can(Ability::ManageClients) ? self::item('Clients', 'clients', 'building') : null,

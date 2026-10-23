@@ -4,6 +4,58 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Late deduction: exact minutes only; brackets removed**
+- **The owner's question:** do we need late brackets? Their idea was daily rate ÷ hours, rounded up to a whole hour once past grace.
+- **What was chosen:** **exact minutes**. The deduction is the minutes late after the grace period × the hourly rate (daily rate ÷ 8 ÷ 60), which was already the rule whenever no bracket was set.
+- **Why not round up to the hour:** 5 minutes late would cost an hour's pay, which deducts time actually worked (Labor Code Art. 113, "no work, no pay"). Habitual lateness is handled with a Notice to Explain instead.
+- **Removed:**
+  - the **Late Deduction** page and its menu item;
+  - `LateDeductionRule`, `LateBracket`, the Save and Delete actions;
+  - the brackets parameter in `PayslipInput`;
+  - the `late_deduction_rules` table (migration `2026_10_23_100005`).
+- **No payslip changes:** dev and the pilot had no brackets set, so nothing computes differently. Both were backed up first, then migrated, and the pilot was checked (200).
+- **Texts updated:** the payslip's late-days note, the demo FAQ, and the docs.
+- **Tests:** the calculator test now checks that 5 minutes late costs 5 minutes, 61 costs 61, and so on. 977 pass.
+
+**Deployment Costs: a map pin, not a tick, on the picked deployment**
+- The locked "Which deployment" line now shows a grey map pin. A blue ✓ there looked like a checkbox, now that every checkbox has one, and a deployment is a place.
+
+**Checkboxes and radio buttons: one look everywhere**
+- **The problem:** the browser's own checkbox ignored our colours and showed a glaring white square in dark mode ("I certify these are true").
+- **The fix:** `resources/css/app.css` now draws every visible checkbox and radio itself:
+  - **Unticked:** a soft border, white in light mode and dark in dark mode; the border darkens on hover.
+  - **Ticked:** filled blue with a white tick (a white dot for radios). The "Urgent" announcement box stays amber.
+  - **Also:** a focus ring for the keyboard, and dimmed when disabled.
+- **Untouched:** hidden boxes behind styled chips or switches (`sr-only`).
+- **Why the rules sit outside Tailwind's layers:** a utility left on an input (`dark:bg-gray-800`) could otherwise cover the tick.
+- **Also:** `.dark { color-scheme: dark }`, so date pickers and scrollbars follow dark mode.
+- **Checked in a real browser:** dark and light, unticked and ticked.
+
+**Deployment Costs: choices first, for every guard**
+- **The owner noticed:** a guard with no roster duties in the window went straight to an editable box ("OSSI Head Office (in-house) can type hahaha").
+- **Now the choices are always:**
+  1. their roster duties;
+  2. **their usual post**;
+  3. **another client's post…**, a searchable client list (a Satellite sees its own region's);
+  4. **"Not on any list? Type it"**.
+- Whatever is picked is locked with **Change**. The text box appears only after choosing "Type it", which is kept for true one-offs, so no valid claim is blocked.
+- **Tests:** 987 pass, and the screen was checked in a real browser at phone width.
+
+**Deployment Costs: a picked duty is locked**
+- **The owner asked:** why can it still be edited when it's a choice? Edited text could stop matching the roster duty, or the relief the claim is linked to.
+- **Now, three states** (`deploymentMode`):
+  - **Choosing:** the guard's roster duties, plus a last option "Not on the roster? Type it".
+  - **Picked:** shown locked, "✓ Eastwood City, Gate 2, Oct 23 · Change", like the guard above it. Filing from a relief on Relievers opens it already picked.
+  - **Typed:** a text box, with "Pick from their roster instead". A guard with no duties in the window starts here, prefilled with their post.
+- Sending with nothing chosen says "Pick one of their duties, or type it if it isn't on the roster."
+- **Checked:** 987 tests pass, and a real browser at phone width.
+
+**Deployment Costs: pick the deployment from the guard's roster**
+- **Before:** after choosing the guard, Operations typed "Which deployment" (or kept their usual post).
+- **Now:** the form lists **their duties from the roster in the filing window** (60 days, newest first): their posts and the reliefs they covered. One tap fills both the deployment and the date spent. A relief whose fare isn't claimed yet is linked to that relief, so it's claimed once, as when filing from Relievers. Typing stays available for anything not on the roster.
+- **Bug caught by the browser check:** today's duty was left out. `duty_date` is stored with a time ("… 00:00:00"), so comparing it with "2026-10-23" dropped today. It now compares by date (`whereDate`), and the test covers today and tomorrow. Nowhere else in the code compares these dates that way.
+- **Tests:** 987 pass, and the screen was checked in a browser at 1280 and 390 px.
+
 **Deployment Costs: one hint fewer**
 - **Removed:** the line "Within 60 days of the trip. Up to ₱20,000 per claim. The guard is told." under the receipt on File a claim, at the owner's request.
 - **Unchanged:** both limits are still checked when the claim is sent, with an error that names them, and the guard is still told.

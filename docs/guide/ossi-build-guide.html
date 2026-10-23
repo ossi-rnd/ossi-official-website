@@ -1121,7 +1121,7 @@ sequenceDiagram
         });
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Support/Navigation.php<span class="lines">175 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Support/Navigation.php<span class="lines">174 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Support;
 
@@ -1196,7 +1196,6 @@ sequenceDiagram
                 <span class="c">// Badges count what&#039;s waiting for YOUR decision (office staff&#039;s go to the President or Vice President).</span>
                 $<span class="f">can</span>(Ability::MonitorRequests) ? self::<span class="f">item</span>(<span class="s">&#039;Leave Requests&#039;</span>, <span class="s">&#039;leave-requests&#039;</span>, <span class="s">&#039;clipboard&#039;</span>, badge: LeaveRequest::<span class="f">query</span>()-&gt;<span class="f">awaitingActionBy</span>($user)-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
                 $<span class="f">can</span>(Ability::MonitorRequests) ? self::<span class="f">item</span>(<span class="s">&#039;Overtime Requests&#039;</span>, <span class="s">&#039;overtime-requests&#039;</span>, <span class="s">&#039;clock-plus&#039;</span>, badge: OvertimeRequest::<span class="f">query</span>()-&gt;<span class="f">awaitingReviewBy</span>($user)-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
-                $<span class="f">can</span>(Ability::ManagePayroll) ? self::<span class="f">item</span>(<span class="s">&#039;Late Deduction&#039;</span>, <span class="s">&#039;late-deductions&#039;</span>, <span class="s">&#039;clock-alert&#039;</span>) : <span class="k">null</span>,
                 $<span class="f">can</span>(Ability::ManagePayroll) ? self::<span class="f">item</span>(<span class="s">&#039;Tax &amp; Contributions&#039;</span>, <span class="s">&#039;tax-settings&#039;</span>, <span class="s">&#039;scroll&#039;</span>) : <span class="k">null</span>,
                 <span class="c">// The sites guards are deployed to: set up by Operation HQ before HR onboards guards there.</span>
                 $<span class="f">can</span>(Ability::ManageClients) ? self::<span class="f">item</span>(<span class="s">&#039;Clients&#039;</span>, <span class="s">&#039;clients&#039;</span>, <span class="s">&#039;building&#039;</span>) : <span class="k">null</span>,
@@ -5228,12 +5227,11 @@ flowchart LR
     </form>
     <div class="slip" id="slip" aria-live="polite"></div>
   </div>
-  <details class="file" open><summary>app/Services/Payroll/PayslipCalculator.php<span class="lines">268 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Services/Payroll/PayslipCalculator.php<span class="lines">253 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Services\Payroll;
 
 <span class="k">use</span> App\Data\AdjustmentLine;
-<span class="k">use</span> App\Data\LateBracket;
 <span class="k">use</span> App\Data\LoanLine;
 <span class="k">use</span> App\Data\MonthToDate;
 <span class="k">use</span> App\Data\PayslipBreakdown;
@@ -5286,7 +5284,7 @@ flowchart LR
         $night = <span class="f">round</span>($input-&gt;nightMinutes * $minuteRate * $rates-&gt;nightDifferentialRate);
         $overtime = <span class="f">round</span>($input-&gt;overtimeMinutes * $minuteRate * $rates-&gt;overtimeMultiplier);
         $holiday = $this-&gt;<span class="f">holidayPremium</span>($input-&gt;holidayDaysWorked, $dailyRate, $rates);
-        $late = $this-&gt;<span class="f">lateDeduction</span>($input-&gt;lateMinutes, $input-&gt;lateBrackets, $minuteRate);
+        $late = $this-&gt;<span class="f">lateDeduction</span>($input-&gt;lateMinutes, $minuteRate);
 
         <span class="k">return</span> [
             <span class="s">&#039;daily_rate&#039;</span> =&gt; $dailyRate,
@@ -5472,28 +5470,14 @@ flowchart LR
     }
 
     <span class="c">/**
-     * Brackets win when configured: the fixed amount of the matching bracket,
-     * or 0 when none matches. With no brackets at all, fall back to per-minute.
-     *
-     * @param  list&lt;LateBracket&gt;  $brackets
+     * Exactly the time not worked (the owner&#039;s choice, 2026-10-23; &quot;no work, no pay&quot;): the minutes
+     * late after the grace period × daily rate ÷ 8 hours ÷ 60. Never rounded up to a block of time,
+     * which would deduct time actually worked (Labor Code Art. 113). The late-deduction brackets
+     * that could override this were removed.
      */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">lateDeduction</span>(int $lateMinutes, array $brackets, float $minuteRate): float
+    <span class="k">private</span> <span class="k">function</span> <span class="f">lateDeduction</span>(int $lateMinutes, float $minuteRate): float
     {
-        <span class="k">if</span> ($lateMinutes &lt;= <span class="n">0</span>) {
-            <span class="k">return</span> <span class="n">0.0</span>;
-        }
-
-        <span class="k">if</span> ($brackets === []) {
-            <span class="k">return</span> <span class="f">round</span>($lateMinutes * $minuteRate);
-        }
-
-        <span class="k">foreach</span> ($brackets <span class="k">as</span> $bracket) {
-            <span class="k">if</span> ($bracket-&gt;<span class="f">covers</span>($lateMinutes)) {
-                <span class="k">return</span> $bracket-&gt;amount;
-            }
-        }
-
-        <span class="k">return</span> <span class="n">0.0</span>;
+        <span class="k">return</span> $lateMinutes &lt;= <span class="n">0</span> ? <span class="n">0.0</span> : <span class="f">round</span>($lateMinutes * $minuteRate);
     }
 }</code></pre></details>
   <details class="file"><summary>app/Queries/Payroll/ResolvePayslips.php<span class="lines">65 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
@@ -5561,13 +5545,12 @@ flowchart LR
         <span class="k">return</span> $this-&gt;<span class="f">handle</span>($run, <span class="f">collect</span>([$user]))[$user-&gt;id];
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Queries/Payroll/PayslipInputsQuery.php<span class="lines">276 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Queries/Payroll/PayslipInputsQuery.php<span class="lines">267 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Queries\Payroll;
 
 <span class="k">use</span> App\Data\AdjustmentLine;
 <span class="k">use</span> App\Data\CarryoverLine;
-<span class="k">use</span> App\Data\LateBracket;
 <span class="k">use</span> App\Data\LoanLine;
 <span class="k">use</span> App\Data\MonthToDate;
 <span class="k">use</span> App\Data\PayslipInput;
@@ -5576,7 +5559,6 @@ flowchart LR
 <span class="k">use</span> App\Enums\RateSource;
 <span class="k">use</span> App\Models\EmployeeDeduction;
 <span class="k">use</span> App\Models\Holiday;
-<span class="k">use</span> App\Models\LateDeductionRule;
 <span class="k">use</span> App\Models\OvertimeRequest;
 <span class="k">use</span> App\Models\PayrollAdjustment;
 <span class="k">use</span> App\Models\PayrollCarryover;
@@ -5652,12 +5634,6 @@ flowchart LR
             -&gt;<span class="f">get</span>()
             -&gt;<span class="f">groupBy</span>(<span class="s">&#039;user_id&#039;</span>);
 
-        $brackets = <span class="f">array_values</span>(LateDeductionRule::<span class="f">query</span>()
-            -&gt;<span class="f">orderBy</span>(<span class="s">&#039;min_minutes&#039;</span>)
-            -&gt;<span class="f">get</span>()
-            -&gt;<span class="f">map</span>(<span class="k">fn</span> (LateDeductionRule $rule) =&gt; <span class="k">new</span> <span class="f">LateBracket</span>($rule-&gt;min_minutes, $rule-&gt;max_minutes, (float) $rule-&gt;deduction_amount))
-            -&gt;<span class="f">all</span>());
-
         $monthToDate = $this-&gt;<span class="f">monthToDate</span>($run, $users);
 
         <span class="c">// Personal rate, else the position&#039;s rate, in force when the period starts.</span>
@@ -5689,7 +5665,6 @@ flowchart LR
                 overtimeMinutes: $this-&gt;<span class="f">payableOvertime</span>($logs, $approved),
                 holidayDaysWorked: $this-&gt;<span class="f">holidayDaysWorked</span>($logs, $holidayTypes),
                 loans: $this-&gt;<span class="f">loanLines</span>($loans),
-                lateBrackets: $brackets,
                 carryovers: <span class="f">array_values</span>($carryovers-&gt;<span class="f">map</span>(<span class="k">fn</span> (PayrollCarryover $carryover) =&gt; <span class="k">new</span> <span class="f">CarryoverLine</span>($carryover-&gt;id, $carryover-&gt;label, (float) $carryover-&gt;amount))-&gt;<span class="f">all</span>()),
                 adjustments: <span class="f">array_values</span>($adjustments-&gt;<span class="f">map</span>(<span class="k">fn</span> (PayrollAdjustment $adjustment) =&gt; <span class="k">new</span> <span class="f">AdjustmentLine</span>($adjustment-&gt;id, $adjustment-&gt;<span class="f">lineLabel</span>(), (float) $adjustment-&gt;amount, $adjustment-&gt;category-&gt;<span class="f">isTaxable</span>()))-&gt;<span class="f">all</span>()),
                 monthToDate: $monthToDate[$user-&gt;id],
@@ -8165,7 +8140,7 @@ flowchart LR
                             &lt;/tbody&gt;
                         &lt;/table&gt;
                         &lt;p <span class="k">class</span>=<span class="s">&quot;border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:border-gray-800&quot;</span>&gt;
-                            The deduction uses the late brackets on the period&#039;s total of {{ $payslip-&gt;lateMinutes }} minutes.
+                            The deduction is exactly these {{ $payslip-&gt;lateMinutes }} minutes (after the grace period) at the hourly rate: the daily rate ÷ <span class="n">8</span>.
                         &lt;/p&gt;
                     &lt;/div&gt;
                 @endif
@@ -8231,7 +8206,6 @@ flowchart LR
   <details class="file" open><summary>tests/Unit/PayslipCalculatorTest.php<span class="lines">143 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">use</span> App\Data\CarryoverLine;
-<span class="k">use</span> App\Data\LateBracket;
 <span class="k">use</span> App\Data\LoanLine;
 <span class="k">use</span> App\Data\PayslipInput;
 <span class="k">use</span> App\Data\RateSchedule;
@@ -8310,18 +8284,19 @@ flowchart LR
         -&gt;<span class="f">and</span>($calculator-&gt;<span class="f">calculate</span>(<span class="k">new</span> <span class="f">PayslipInput</span>(<span class="k">false</span>, <span class="n">0</span>, <span class="n">10</span>, <span class="n">0</span>, <span class="n">0</span>), <span class="f">rates</span>())-&gt;nightDifferential)-&gt;<span class="f">toBe</span>(<span class="n">0.0</span>);
 });
 
-<span class="f">it</span>(<span class="s">&#039;uses the matching late bracket, or nothing when brackets exist but none match&#039;</span>, <span class="k">function</span> (int $lateMinutes, float $expected) {
-    $brackets = [<span class="k">new</span> <span class="f">LateBracket</span>(<span class="n">1</span>, <span class="n">15</span>, <span class="n">50.0</span>), <span class="k">new</span> <span class="f">LateBracket</span>(<span class="n">16</span>, <span class="n">60</span>, <span class="n">150.0</span>), <span class="k">new</span> <span class="f">LateBracket</span>(<span class="n">120</span>, <span class="k">null</span>, <span class="n">500.0</span>)];
+<span class="f">it</span>(<span class="s">&#039;deducts exactly the minutes late after grace, at the hourly rate (daily ÷ 8), never a rounded-up block&#039;</span>, <span class="k">function</span> (int $lateMinutes) {
+    $hourly = <span class="f">rates</span>()-&gt;<span class="f">dailyRate</span>(<span class="k">false</span>) / <span class="n">8</span>;
 
-    $payslip = (<span class="k">new</span> PayslipCalculator)-&gt;<span class="f">calculate</span>(<span class="k">new</span> <span class="f">PayslipInput</span>(<span class="k">false</span>, <span class="n">0</span>, <span class="n">10</span>, $lateMinutes, <span class="n">0</span>, [], [], $brackets), <span class="f">rates</span>());
+    $payslip = (<span class="k">new</span> PayslipCalculator)-&gt;<span class="f">calculate</span>(<span class="k">new</span> <span class="f">PayslipInput</span>(<span class="k">false</span>, <span class="n">0</span>, <span class="n">10</span>, $lateMinutes, <span class="n">0</span>), <span class="f">rates</span>());
 
-    <span class="f">expect</span>($payslip-&gt;lateDeduction)-&gt;<span class="f">toBe</span>($expected);
+    <span class="c">// 5 minutes late costs 5 minutes&#039; pay, not an hour&#039;s (Art. 113: only time not worked).</span>
+    <span class="f">expect</span>($payslip-&gt;lateDeduction)-&gt;<span class="f">toBe</span>(<span class="f">round</span>($lateMinutes * $hourly / <span class="n">60</span>));
 })-&gt;<span class="f">with</span>([
-    <span class="s">&#039;bottom of first bracket&#039;</span> =&gt; [<span class="n">1</span>, <span class="n">50.0</span>],
-    <span class="s">&#039;top of second bracket&#039;</span> =&gt; [<span class="n">60</span>, <span class="n">150.0</span>],
-    <span class="s">&#039;gap between brackets&#039;</span> =&gt; [<span class="n">90</span>, <span class="n">0.0</span>],
-    <span class="s">&#039;open-ended bracket&#039;</span> =&gt; [<span class="n">600</span>, <span class="n">500.0</span>],
-    <span class="s">&#039;not late&#039;</span> =&gt; [<span class="n">0</span>, <span class="n">0.0</span>],
+    <span class="s">&#039;not late&#039;</span> =&gt; [<span class="n">0</span>],
+    <span class="s">&#039;5 minutes&#039;</span> =&gt; [<span class="n">5</span>],
+    <span class="s">&#039;an hour&#039;</span> =&gt; [<span class="n">60</span>],
+    <span class="s">&#039;an hour and a minute&#039;</span> =&gt; [<span class="n">61</span>],
+    <span class="s">&#039;a whole shift&#039;</span> =&gt; [<span class="n">480</span>],
 ]);
 
 <span class="f">it</span>(<span class="s">&#039;subtracts every loan installment from net pay&#039;</span>, <span class="k">function</span> () {
@@ -8371,7 +8346,7 @@ flowchart LR
     <span class="f">expect</span>($payslip-&gt;shortfallLines)-&gt;<span class="f">toBe</span>([])
         -&gt;<span class="f">and</span>($payslip-&gt;<span class="f">netPay</span>())-&gt;<span class="f">toBe</span>(<span class="n">7024.0</span>);
 });</code></pre></details>
-  <details class="file"><summary>tests/Feature/Access/RouteAccessTest.php<span class="lines">99 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>tests/Feature/Access/RouteAccessTest.php<span class="lines">98 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\RequestStatus;
@@ -8394,7 +8369,6 @@ flowchart LR
         <span class="s">&#039;overtime-requests&#039;</span> =&gt; Ability::MonitorRequests,
         <span class="s">&#039;employees&#039;</span> =&gt; Ability::ViewPeople,
         <span class="s">&#039;payroll&#039;</span> =&gt; Ability::ManagePayroll,
-        <span class="s">&#039;late-deductions&#039;</span> =&gt; Ability::ManagePayroll,
         <span class="s">&#039;tax-settings&#039;</span> =&gt; Ability::ManagePayroll,
         <span class="s">&#039;holidays&#039;</span> =&gt; Ability::ConfigureHolidays,
         <span class="s">&#039;shifts&#039;</span> =&gt; Ability::ConfigureSystem,
@@ -9428,7 +9402,7 @@ Schedule::<span class="f">command</span>(<span class="s">&#039;app:publish-annou
   </table></div>
 
   <h3>Full late details</h3>
-  <p>The list reads the same <code>time_logs.late_minutes</code>, over the same dates, that the payslip total sums. So the days always add up to the minutes shown, and the deduction still comes from the late brackets applied to that total.</p>
+  <p>The list reads the same <code>time_logs.late_minutes</code>, over the same dates, that the payslip total sums. So the days always add up to the minutes shown, and the deduction is exactly that total at the hourly rate (daily rate ÷ 8). The late brackets that could override it were removed on 2026-10-23: deducting more than the time lost (5 minutes late = an hour's pay) would take pay for time actually worked, which Labor Code Art. 113 doesn't allow.</p>
   <details class="file"><summary>app/Queries/Payroll/LateDaysQuery.php<span class="lines">40 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Queries\Payroll;
@@ -21228,6 +21202,9 @@ flowchart LR
     <tr><td>The Equipment menu reads new tables. That code was saved several minutes before the pilot was migrated, so the pilot's pages could fail in between: the Radios slip again.</td><td>With a new table, migrate the pilot <b>first</b> (backup, then <code>pilot-artisan.ps1 migrate --force</code>), then save code that reads it. To replace a column (equipment's <code>has_sizes</code> → <code>sizes</code>), use three steps: add the new column and migrate both databases, switch the code, then drop the old column. The live code never meets a database it doesn't fit.</td></tr>
     <tr><td>The shop's cards looked fine in tests but were cramped on a wide screen: three across in a column only ~46rem wide beside the cart. The first browser check still showed one huge column, because the CSS hadn't been rebuilt after adding classes.</td><td>Size a grid by the space <i>it</i> has, with a container query (<code>@container</code>, then <code>@lg:grid-cols-2</code>), not by the screen (<code>xl:</code>), when it sits beside a sidebar. Tests don't see layout: look at it in a real browser at phone and desktop widths. Run <code>npm run build</code> before looking.</td></tr>
     <tr><td>In the Issue form, an open list inside the dialog was cut off after three names while the form was still short. The dialog scrolls, and the list lives inside it.</td><td>A dropdown inside a scrolling dialog needs room: give the form a minimum height (<code>min-h-96</code>), or keep such lists near the top. Only a real browser shows this.</td></tr>
+    <tr><td>Deployment Costs listed a guard's roster duties "up to today", but today's duty was missing. <code>duty_date</code> is a date column that SQLite stores as "2026-10-23 00:00:00", and as text that's greater than "2026-10-23".</td><td>Compare date columns by date: <code>whereDate('duty_date', '&lt;=', $today)</code>, not <code>whereBetween</code> with plain strings. Test the edge (today, tomorrow), not only the middle.</td></tr>
+    <tr><td>Deployment Costs let Operations pick a roster duty, then still edit the text under it. The owner asked why: a claim could then say one deployment while being linked to another relief.</td><td>Once something is picked from a list, show it locked with <b>Change</b>. Offer free typing only as an explicit last choice ("Not on the roster? Type it"). The data stays tied to what was really picked. And no case should skip the choices: a guard with no roster duties still gets their post and the client list first. Typing comes last.</td></tr>
+    <tr><td>The "I certify" checkbox glared white in dark mode. A native checkbox ignores <code>bg-</code> classes, so <code>dark:bg-gray-800</code> did nothing.</td><td>Draw checkboxes and radios once, globally, with <code>appearance: none</code> (in <code>app.css</code>). Keep those rules <b>outside</b> Tailwind's layers, because unlayered CSS beats utilities, so a leftover class can't hide the tick. Set <code>color-scheme: dark</code> on <code>.dark</code> for the rest of the native controls.</td></tr>
     <tr><td>Every error page said "Go to the dashboard", but guards have no dashboard and a visitor may be signed out.</td><td>A button's label must be true for everyone who sees it. Point it at a route that decides (<code>/home</code>: sign-in, My Attendance or the Dashboard) and name it neutrally. An error page can't reliably check who's signed in: a 404 often never starts the session.</td></tr>
     <tr><td>The 500 and 503 pages were missing, so a server error or an update showed Laravel's default page; the others were bare text with a blue number.</td><td>List every status a user can hit (401, 403, 404, 419, 429, 500, 503) and give each the app's look, a way forward and a reason, using no session or database. A 500 page shows the time for IT, never the error.</td></tr>
     <tr><td>The dashboard looked fine for HR (3 numbers) but squeezed for the Super Admin (11 in one row, every label "Peop…", "None yet" wrapping onto two lines).</td><td>Check a layout with the <i>most</i> data a role can have, not the usual. Wrap past a column count instead of shrinking forever, and give text values their own size so a row still lines up.</td></tr>
@@ -21301,7 +21278,7 @@ flowchart LR
       row('Gross', peso(gross), 'total') +
       row('SSS', '-' + peso(R.sss[t])) + row('PhilHealth', '-' + peso(R.ph[t])) + row('Pag-IBIG', '-' + peso(R.pi[t])) +
       row(t === 'f' ? 'Withholding tax (minimum wage, exempt)' : 'Withholding tax 2%', '-' + peso(tax)) +
-      row(`Late (${late} min, no brackets)`, '-' + peso(lateDed)) +
+      row(`Late (${late} min, at the hourly rate)`,'-' + peso(lateDed)) +
       (loan ? row('Loan installment', '-' + peso(loan)) : '') +
       row('Total deductions', '-' + peso(ded), 'total') +
       `<div class="net"><span>Net pay</span><span>${peso(gross - ded)}</span></div>` +

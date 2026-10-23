@@ -89,7 +89,71 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400">The reliever's fare for this relief: linked to it on Relievers, and claimed once.</p>
                 @endif
                 @error('relief') <x-ui.alert tone="red">{{ $message }}</x-ui.alert> @enderror
-                <x-ui.input label="Which deployment" wire:model="deploymentFor" maxlength="255" placeholder="e.g. Relief at Metrobank – Dasmariñas, Main Entrance" />
+                {{-- Which deployment: a duty from the guard's roster (locked once picked, like the guard),
+                     or typed only when Operations says it isn't on the roster. --}}
+                <div>
+                    <p class="ui-label">Which deployment</p>
+                    @if ($guardId !== null && $deploymentMode === 'picked')
+                        <div class="mt-1 flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+                            <span class="flex min-w-0 items-center gap-2">
+                                {{-- A place (a post or a client), not a tick: a checkbox looks like that. --}}
+                                <x-icon name="map-pin" class="h-4 w-4 shrink-0 text-gray-400" />
+                                <span class="text-sm text-gray-800 dark:text-gray-100">{{ $deploymentFor }}</span>
+                            </span>
+                            <button type="button" wire:click="changeDeployment" class="shrink-0 text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Change</button>
+                        </div>
+                        @error('deploymentFor') <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
+                    @elseif ($guardId !== null && $deploymentMode === 'client')
+                        <div class="mt-1">
+                            <x-ui.select wire:model.live="deploymentClientId" searchable aria-label="Client">
+                                <option value="">Search a client…</option>
+                                @foreach ($this->clientChoices as $client)
+                                    <option value="{{ $client->id }}">{{ $client->name }} · {{ $client->locationLabel() }}</option>
+                                @endforeach
+                            </x-ui.select>
+                            <button type="button" wire:click="changeDeployment" class="mt-1 text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Back to the choices</button>
+                        </div>
+                    @elseif ($guardId !== null && $deploymentMode === '')
+                        @if ($this->recentDuties->isNotEmpty())
+                            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">From their roster, the last {{ \App\Models\Reimbursement::fileWithinDays() }} days:</p>
+                        @endif
+                        <ul class="mt-1.5 max-h-72 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-700" aria-label="Their duties">
+                            @foreach ($this->recentDuties as $duty)
+                                <li wire:key="duty-{{ $duty->id }}">
+                                    <button type="button" wire:click="pickDuty({{ $duty->id }})" class="w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5">
+                                        <span class="block truncate">{{ $duty->absenceNotice ? 'Relief at '.$duty->absenceNotice->placeLabel() : collect([$duty->client?->name, $duty->post])->filter()->implode(', ') }}</span>
+                                        <span class="block text-xs text-gray-500 dark:text-gray-400">{{ $duty->duty_date->format('D, M j') }}{{ $duty->absenceNotice ? ' · covering '.$duty->absenceNotice->user->name : '' }}</span>
+                                    </button>
+                                </li>
+                            @endforeach
+                            @if ($post = $this->usualPost())
+                                <li>
+                                    <button type="button" wire:click="pickUsualPost" class="w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5">
+                                        <span class="block truncate">{{ $post }}</span>
+                                        <span class="block text-xs text-gray-500 dark:text-gray-400">Their usual post</span>
+                                    </button>
+                                </li>
+                            @endif
+                            <li>
+                                <button type="button" wire:click="chooseClient" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-white/5">
+                                    <x-icon name="building" class="h-4 w-4 text-gray-400" /> Another client's post…
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" wire:click="typeDeployment" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-blue-600 hover:bg-gray-50 dark:text-blue-400 dark:hover:bg-white/5">
+                                    <x-icon name="pencil" class="h-4 w-4" /> Not on any list? Type it
+                                </button>
+                            </li>
+                        </ul>
+                        @error('deploymentFor') <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
+                    @else
+                        <x-ui.input wire:model="deploymentFor" maxlength="255" aria-label="Which deployment" class="mt-1"
+                            placeholder="e.g. Escort duty to the bank, Oct 20" />
+                        @if ($guardId !== null)
+                            <button type="button" wire:click="changeDeployment" class="mt-1 text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Back to the choices</button>
+                        @endif
+                    @endif
+                </div>
                 <div class="grid grid-cols-2 gap-3">
                     <x-ui.input label="Date spent" type="date" wire:model="spentOn" :max="today()->toDateString()" />
                     <x-ui.input label="Amount (₱)" type="number" step="0.01" min="1" :max="\App\Models\Reimbursement::maxAmount(deployment: true)" wire:model="amount" />

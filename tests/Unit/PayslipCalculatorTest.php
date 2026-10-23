@@ -1,7 +1,6 @@
 <?php
 
 use App\Data\CarryoverLine;
-use App\Data\LateBracket;
 use App\Data\LoanLine;
 use App\Data\PayslipInput;
 use App\Data\RateSchedule;
@@ -80,18 +79,19 @@ it('pays 10% night differential only for the minutes actually worked 10 PM–6 A
         ->and($calculator->calculate(new PayslipInput(false, 0, 10, 0, 0), rates())->nightDifferential)->toBe(0.0);
 });
 
-it('uses the matching late bracket, or nothing when brackets exist but none match', function (int $lateMinutes, float $expected) {
-    $brackets = [new LateBracket(1, 15, 50.0), new LateBracket(16, 60, 150.0), new LateBracket(120, null, 500.0)];
+it('deducts exactly the minutes late after grace, at the hourly rate (daily ÷ 8), never a rounded-up block', function (int $lateMinutes) {
+    $hourly = rates()->dailyRate(false) / 8;
 
-    $payslip = (new PayslipCalculator)->calculate(new PayslipInput(false, 0, 10, $lateMinutes, 0, [], [], $brackets), rates());
+    $payslip = (new PayslipCalculator)->calculate(new PayslipInput(false, 0, 10, $lateMinutes, 0), rates());
 
-    expect($payslip->lateDeduction)->toBe($expected);
+    // 5 minutes late costs 5 minutes' pay, not an hour's (Art. 113: only time not worked).
+    expect($payslip->lateDeduction)->toBe(round($lateMinutes * $hourly / 60));
 })->with([
-    'bottom of first bracket' => [1, 50.0],
-    'top of second bracket' => [60, 150.0],
-    'gap between brackets' => [90, 0.0],
-    'open-ended bracket' => [600, 500.0],
-    'not late' => [0, 0.0],
+    'not late' => [0],
+    '5 minutes' => [5],
+    'an hour' => [60],
+    'an hour and a minute' => [61],
+    'a whole shift' => [480],
 ]);
 
 it('subtracts every loan installment from net pay', function () {

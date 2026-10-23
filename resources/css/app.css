@@ -16,6 +16,105 @@
     display: none !important;
 }
 
+/* In dark mode the browser's own controls (date pickers, scrollbars) are dark too. */
+.dark {
+    color-scheme: dark;
+}
+
+/*
+ * Every checkbox and radio, drawn by us: the browser's own ignore our colours and glare white in
+ * dark mode. Hidden ones (sr-only, behind a styled label or a switch) are left alone. Ticked is
+ * blue in both themes; an "urgent" box (accent-amber-600) is amber.
+ *
+ * Not in a layer on purpose: unlayered rules beat Tailwind's utilities, so a class left on an input
+ * (dark:bg-gray-800, text-blue-600) can't cover the tick. Margins stay the utilities' (mt-0.5).
+ */
+    input[type='checkbox']:not(.sr-only),
+    input[type='radio']:not(.sr-only) {
+        appearance: none;
+        flex-shrink: 0;
+        display: inline-grid;
+        place-content: center;
+        width: 1rem;
+        height: 1rem;
+        border: 1.5px solid var(--color-gray-300);
+        border-radius: 0.3rem;
+        background-color: var(--color-white);
+        cursor: pointer;
+        transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s;
+        --on: var(--color-blue-600);
+    }
+
+    input[type='radio']:not(.sr-only) {
+        border-radius: 9999px;
+    }
+
+    input[type='checkbox']:not(.sr-only):hover,
+    input[type='radio']:not(.sr-only):hover {
+        border-color: var(--color-gray-400);
+    }
+
+    input[type='checkbox']:not(.sr-only):checked,
+    input[type='radio']:not(.sr-only):checked {
+        border-color: var(--on);
+        background-color: var(--on);
+    }
+
+    /* The tick, and the radio's dot, in white. */
+    input[type='checkbox']:not(.sr-only):checked::before {
+        content: '';
+        width: 0.625rem;
+        height: 0.625rem;
+        background-color: var(--color-white);
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    input[type='radio']:not(.sr-only):checked::before {
+        content: '';
+        width: 0.375rem;
+        height: 0.375rem;
+        border-radius: 9999px;
+        background-color: var(--color-white);
+    }
+
+    input[type='checkbox']:not(.sr-only):focus-visible,
+    input[type='radio']:not(.sr-only):focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--on) 35%, transparent);
+    }
+
+    input[type='checkbox']:not(.sr-only):disabled,
+    input[type='radio']:not(.sr-only):disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    input[type='checkbox'].accent-amber-600 {
+        --on: var(--color-amber-600);
+    }
+
+    .dark input[type='checkbox']:not(.sr-only),
+    .dark input[type='radio']:not(.sr-only) {
+        border-color: var(--color-gray-600);
+        background-color: var(--color-gray-900);
+        --on: var(--color-blue-500);
+    }
+
+    .dark input[type='checkbox']:not(.sr-only):hover,
+    .dark input[type='radio']:not(.sr-only):hover {
+        border-color: var(--color-gray-500);
+    }
+
+    .dark input[type='checkbox']:not(.sr-only):checked,
+    .dark input[type='radio']:not(.sr-only):checked {
+        border-color: var(--on);
+        background-color: var(--on);
+    }
+
+    .dark input[type='checkbox'].accent-amber-600 {
+        --on: var(--color-amber-500);
+    }
+
 /*
  * Organization chart connectors. A row's cells each get a stub up to a shared
  * bar (first and last cut at their middle); a --join row draws them downwards,

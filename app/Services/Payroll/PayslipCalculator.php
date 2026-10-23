@@ -3,7 +3,6 @@
 namespace App\Services\Payroll;
 
 use App\Data\AdjustmentLine;
-use App\Data\LateBracket;
 use App\Data\LoanLine;
 use App\Data\MonthToDate;
 use App\Data\PayslipBreakdown;
@@ -56,7 +55,7 @@ final class PayslipCalculator
         $night = round($input->nightMinutes * $minuteRate * $rates->nightDifferentialRate);
         $overtime = round($input->overtimeMinutes * $minuteRate * $rates->overtimeMultiplier);
         $holiday = $this->holidayPremium($input->holidayDaysWorked, $dailyRate, $rates);
-        $late = $this->lateDeduction($input->lateMinutes, $input->lateBrackets, $minuteRate);
+        $late = $this->lateDeduction($input->lateMinutes, $minuteRate);
 
         return [
             'daily_rate' => $dailyRate,
@@ -242,27 +241,13 @@ final class PayslipCalculator
     }
 
     /**
-     * Brackets win when configured: the fixed amount of the matching bracket,
-     * or 0 when none matches. With no brackets at all, fall back to per-minute.
-     *
-     * @param  list<LateBracket>  $brackets
+     * Exactly the time not worked (the owner's choice, 2026-10-23; "no work, no pay"): the minutes
+     * late after the grace period × daily rate ÷ 8 hours ÷ 60. Never rounded up to a block of time,
+     * which would deduct time actually worked (Labor Code Art. 113). The late-deduction brackets
+     * that could override this were removed.
      */
-    private function lateDeduction(int $lateMinutes, array $brackets, float $minuteRate): float
+    private function lateDeduction(int $lateMinutes, float $minuteRate): float
     {
-        if ($lateMinutes <= 0) {
-            return 0.0;
-        }
-
-        if ($brackets === []) {
-            return round($lateMinutes * $minuteRate);
-        }
-
-        foreach ($brackets as $bracket) {
-            if ($bracket->covers($lateMinutes)) {
-                return $bracket->amount;
-            }
-        }
-
-        return 0.0;
+        return $lateMinutes <= 0 ? 0.0 : round($lateMinutes * $minuteRate);
     }
 }

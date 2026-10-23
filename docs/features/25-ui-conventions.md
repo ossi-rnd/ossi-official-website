@@ -100,7 +100,7 @@ For a setting that is on or off (e.g. **Test account** on Add employee), use `<x
 
 ## Durations (`App\Support\Duration`)
 
-Show minutes the way people read them: `Duration::minutes(314)` → "5 hr 14 min", 60 → "1 hr", 45 → "45 min". Pass `short: true` ("5h 14m") only for tight table cells. Settings where HR types minutes (grace, late brackets) stay in minutes.
+Show minutes the way people read them: `Duration::minutes(314)` → "5 hr 14 min", 60 → "1 hr", 45 → "45 min". Pass `short: true` ("5h 14m") only for tight table cells. Settings where HR types minutes (grace periods) stay in minutes.
 
 ## Dark mode: coloured text uses the -400 shade
 

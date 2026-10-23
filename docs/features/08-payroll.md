@@ -33,7 +33,7 @@ deductions     = SSS + PhilHealth + Pag-IBIG + tax + late + loan installments
 net            = taxable gross − deductions
 ```
 
-Late: the matching employer bracket if any exist (no match = 0), otherwise `round(late minutes × minute rate)`. Tax: 0 for field staff (minimum wage, RA 9504), 2% for office staff.
+Late: exactly the minutes late after the grace period, `round(late minutes × minute rate)`, where the minute rate is the daily rate ÷ 8 ÷ 60. Never rounded up to a block of time, which would deduct time worked (Labor Code Art. 113). The late-deduction brackets that could override this were removed on 2026-10-23 (the owner's choice). Tax: 0 for field staff (minimum wage, RA 9504), 2% for office staff.
 
 **Worked example** (field guard, 13 days, 120 approved OT minutes, 30 min late, 1 regular holiday): net **₱7,787**. It's a unit test (`tests/Unit/PayslipCalculatorTest.php`) and a feature test with real rows.
 

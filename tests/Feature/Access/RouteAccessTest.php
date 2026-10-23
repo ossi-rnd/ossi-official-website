@@ -21,7 +21,6 @@ dataset('staff pages', function () {
         'overtime-requests' => Ability::MonitorRequests,
         'employees' => Ability::ViewPeople,
         'payroll' => Ability::ManagePayroll,
-        'late-deductions' => Ability::ManagePayroll,
         'tax-settings' => Ability::ManagePayroll,
         'holidays' => Ability::ConfigureHolidays,
         'shifts' => Ability::ConfigureSystem,

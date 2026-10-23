@@ -65,7 +65,7 @@ Recipients come from `User::notifiable($roles)`: role holders who still work her
 
 ## Late details always add up
 
-`LateDaysQuery` reads the same `time_logs.late_minutes` over the same run dates that `PayslipInputsQuery` sums for the payslip. The list therefore always explains the total, and the deduction still comes from the late brackets applied to that total.
+`LateDaysQuery` reads the same `time_logs.late_minutes` over the same run dates that `PayslipInputsQuery` sums for the payslip. The list therefore always explains the total, and the deduction is exactly that total at the hourly rate (the brackets were removed on 2026-10-23).
 
 ## Screenshot deterrents, honestly
 

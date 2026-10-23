@@ -14,7 +14,9 @@ use App\Livewire\Admin\Relievers;
 use App\Livewire\Reimbursements\MyReimbursements;
 use App\Models\AbsenceNotice;
 use App\Models\Client;
+use App\Models\DutyAssignment;
 use App\Models\Reimbursement;
+use App\Models\Shift;
 use App\Models\TimeLog;
 use App\Notifications\ReimbursementNotice;
 use App\Support\Navigation;
@@ -96,6 +98,11 @@ it('works from the Deployment Costs page, and asks office staff which deployment
     Livewire::actingAs($this->opsHq)->test(DeploymentClaims::class)
         ->call('start')
         ->call('choose', $this->guard->id)
+        ->assertSet('deploymentFor', '') // a choice to make, not a prefilled box
+        ->set('amount', '280')->set('purpose', 'Jeep and tricycle to the Dasmariñas post, emergency relief.')
+        ->set('receipt', UploadedFile::fake()->image('fare.jpg'))->set('acknowledges', true)
+        ->call('file')->assertHasErrors(['deploymentFor' => 'Pick a duty, their post or a client, or type it if it isn\'t on any list.'])
+        ->call('pickUsualPost')
         ->assertSet('deploymentFor', $this->guard->employeeProfile->assignmentLabel())
         ->set('amount', '280')->set('purpose', 'Jeep and tricycle to the Dasmariñas post, emergency relief.')
         ->set('receipt', UploadedFile::fake()->image('fare.jpg'))
@@ -146,4 +153,42 @@ it('claims a reliever\'s fare from the relief: prefilled, linked, and once', fun
     // A relief not done yet can't have its fare claimed.
     $relief->forceFill(['duty_date' => '2026-10-20'])->save();
     expect($relief->fresh()?->fareClaimable())->toBeFalse();
+});
+
+it('offers the guard\'s roster duties of the filing window to pick, instead of typing', function () {
+    $shift = Shift::factory()->create();
+    $duty = function (string $date, ?string $post = 'Gate 2') use ($shift) {
+        $row = new DutyAssignment;
+        $row->forceFill(['user_id' => $this->guard->id, 'duty_date' => $date, 'shift_id' => $shift->id, 'client_id' => $this->guard->employeeProfile?->client_id, 'post' => $post])->save();
+
+        return $row;
+    };
+    $recent = $duty('2026-10-14');
+    $duty('2026-10-17', 'Lobby'); // today counts too (the column keeps a time)
+    $duty('2026-10-18', 'Tomorrow post'); // not yet: not offered
+    $duty('2026-07-01'); // older than the 60-day window: not offered
+
+    $form = Livewire::actingAs($this->opsHq)->test(DeploymentClaims::class)
+        ->call('start')->call('choose', $this->guard->id)
+        ->assertSet('deploymentMode', '')->assertSet('deploymentFor', '') // nothing chosen yet
+        ->assertSee('From their roster')->assertSee('Wed, Oct 14')->assertSee('Sat, Oct 17')->assertDontSee('Tomorrow post')->assertDontSee('Jul 1')
+        ->assertSee('Their usual post')->assertSee('Another client\'s post', false)->assertSee('Not on any list? Type it')
+        ->call('pickDuty', $recent->id)
+        ->assertSet('deploymentMode', 'picked')->assertSet('deploymentFor', 'Metrobank – Imus, Gate 2, Oct 14')
+        ->assertSet('spentOn', '2026-10-14')->assertSet('reliefId', null)
+        ->assertSee('Change')->assertDontSee('Not on any list? Type it'); // locked: no text box
+
+    // Change → the choices again; typing only on request.
+    $form->call('changeDeployment')->assertSet('deploymentMode', '')->assertSet('deploymentFor', '')
+        ->call('typeDeployment')->assertSet('deploymentMode', 'typed')->assertSee('Back to the choices')
+        ->set('deploymentFor', 'Escort duty to the bank, not rostered')->assertHasNoErrors();
+
+    // A guard with no duties in the window: still choices, never a box to type in first.
+    $makati = Client::query()->create(['region' => Region::Ncr, 'province' => 'Makati', 'name' => 'BDO – Makati']);
+    $other = employee(['client_id' => $this->guard->employeeProfile?->client_id, 'detachment' => 'Metrobank – Imus', 'post' => 'Vault']);
+    $form->call('changeGuard')->call('choose', $other->id)
+        ->assertSet('deploymentMode', '')->assertSet('deploymentFor', '')->assertDontSee('From their roster')
+        ->call('pickUsualPost')->assertSet('deploymentMode', 'picked')->assertSet('deploymentFor', 'Metrobank – Imus · Vault')
+        ->call('changeDeployment')->call('chooseClient')->assertSet('deploymentMode', 'client')->assertSee('BDO – Makati')
+        ->set('deploymentClientId', (string) $makati->id)->assertSet('deploymentMode', 'picked')->assertSet('deploymentFor', 'BDO – Makati');
 });

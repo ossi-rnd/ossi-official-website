@@ -6,7 +6,7 @@
 
 | Folder | What it proves |
 | --- | --- |
-| `tests/Unit/PayslipCalculatorTest.php` | Worked example = ₱7,787, holiday premiums, tax by tier, night diff, late brackets, loans. No Laravel boot: rates built by hand |
+| `tests/Unit/PayslipCalculatorTest.php` | Worked example = ₱7,787, holiday premiums, tax by tier, night diff, late as exact minutes at the hourly rate, loans. No Laravel boot: rates built by hand |
 | `tests/Unit/AttendanceCalculatorTest.php` | Late/undertime/overtime, "start + grace + 5 = 5 late", overnight shifts |
 | `tests/Unit/RateScheduleResolverTest.php` | Effective dating |
 | `tests/Unit/ArchitectureTest.php` | House rules (below) |

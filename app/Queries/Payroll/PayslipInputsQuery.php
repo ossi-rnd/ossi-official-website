@@ -4,7 +4,6 @@ namespace App\Queries\Payroll;
 
 use App\Data\AdjustmentLine;
 use App\Data\CarryoverLine;
-use App\Data\LateBracket;
 use App\Data\LoanLine;
 use App\Data\MonthToDate;
 use App\Data\PayslipInput;
@@ -13,7 +12,6 @@ use App\Enums\HolidayType;
 use App\Enums\RateSource;
 use App\Models\EmployeeDeduction;
 use App\Models\Holiday;
-use App\Models\LateDeductionRule;
 use App\Models\OvertimeRequest;
 use App\Models\PayrollAdjustment;
 use App\Models\PayrollCarryover;
@@ -89,12 +87,6 @@ final class PayslipInputsQuery
             ->get()
             ->groupBy('user_id');
 
-        $brackets = array_values(LateDeductionRule::query()
-            ->orderBy('min_minutes')
-            ->get()
-            ->map(fn (LateDeductionRule $rule) => new LateBracket($rule->min_minutes, $rule->max_minutes, (float) $rule->deduction_amount))
-            ->all());
-
         $monthToDate = $this->monthToDate($run, $users);
 
         // Personal rate, else the position's rate, in force when the period starts.
@@ -126,7 +118,6 @@ final class PayslipInputsQuery
                 overtimeMinutes: $this->payableOvertime($logs, $approved),
                 holidayDaysWorked: $this->holidayDaysWorked($logs, $holidayTypes),
                 loans: $this->loanLines($loans),
-                lateBrackets: $brackets,
                 carryovers: array_values($carryovers->map(fn (PayrollCarryover $carryover) => new CarryoverLine($carryover->id, $carryover->label, (float) $carryover->amount))->all()),
                 adjustments: array_values($adjustments->map(fn (PayrollAdjustment $adjustment) => new AdjustmentLine($adjustment->id, $adjustment->lineLabel(), (float) $adjustment->amount, $adjustment->category->isTaxable()))->all()),
                 monthToDate: $monthToDate[$user->id],

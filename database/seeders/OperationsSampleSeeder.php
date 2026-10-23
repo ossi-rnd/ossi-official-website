@@ -189,7 +189,7 @@ class OperationsSampleSeeder extends Seeder
         }
 
         foreach ([
-            ['Attendance and punctuality', "Clock in from My Attendance before your shift starts. A grace period applies; after it, minutes late are deducted per the late-deduction brackets.\n\nIf you can't report for duty, send a notice on Report Absence as early as possible so Operations can send a reliever. Not reporting without notice (AWOL) is a serious offense."],
+            ['Attendance and punctuality', "Clock in from My Attendance before your shift starts. A grace period applies; after it, the exact minutes late are deducted at your hourly rate (daily rate ÷ 8).\n\nIf you can't report for duty, send a notice on Report Absence as early as possible so Operations can send a reliever. Not reporting without notice (AWOL) is a serious offense."],
             ['Uniform and grooming', "Wear the complete prescribed uniform on duty, with your ID and license visible.\n\nKeep a neat haircut and a clean-shaven face, or a neatly trimmed moustache."],
             ['Code of conduct', "Treat clients, visitors and co-workers with respect. No sleeping, drinking or gambling on duty.\n\nReport incidents in the logbook and to your detachment commander right away."],
             ['Leave, overtime and borrowed load', "File leave on My Leave at least 5 days ahead, except for emergencies.\n\nOvertime is paid only when approved. Borrowed load is deducted from your next payslip after it is approved."],

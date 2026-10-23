@@ -8,6 +8,8 @@ use App\Enums\ReimbursementCategory;
 use App\Livewire\Concerns\ChoosesAcknowledgementLanguage;
 use App\Livewire\Concerns\InteractsWithUser;
 use App\Models\AbsenceNotice;
+use App\Models\Client;
+use App\Models\DutyAssignment;
 use App\Models\Reimbursement;
 use App\Models\User;
 use App\Queries\People\PeopleToActOnQuery;
@@ -33,6 +35,8 @@ use Livewire\WithFileUploads;
  * @property-read Collection<int, AbsenceNotice> $reliefsToClaim
  * @property-read Collection<int, User> $candidates
  * @property-read User|null $chosen
+ * @property-read Collection<int, DutyAssignment> $recentDuties
+ * @property-read Collection<int, Client> $clientChoices
  */
 #[Title('Deployment Costs')]
 class DeploymentClaims extends Component
@@ -52,6 +56,16 @@ class DeploymentClaims extends Component
     public string $purpose = '';
 
     public string $deploymentFor = '';
+
+    /**
+     * How "Which deployment" is answered: '' choosing from the guard's roster, 'picked' a roster duty
+     * (or the relief this claim came from), locked with Change; 'typed' written by hand, only when
+     * Operations says it isn't on the roster.
+     */
+    public string $deploymentMode = '';
+
+    /** "Another client's post": the client picked from the list. */
+    public string $deploymentClientId = '';
 
     /** @var UploadedFile|null */
     public $receipt = null;
@@ -96,8 +110,58 @@ class DeploymentClaims extends Component
         $this->reliefId = $relief->id;
         $this->guardId = $relief->reliever->id;
         $this->deploymentFor = $relief->reliefLabel();
+        $this->deploymentMode = 'picked'; // that relief, locked (Change to pick another)
         $this->spentOn = $relief->duty_date->toDateString();
         unset($this->chosen);
+    }
+
+    /**
+     * The chosen guard's duties on the roster within the filing window (newest first), to pick
+     * from instead of typing: their own posts and the reliefs they covered.
+     *
+     * @return Collection<int, DutyAssignment>
+     */
+    #[Computed]
+    public function recentDuties(): Collection
+    {
+        if ($this->guardId === null) {
+            return new Collection;
+        }
+
+        return DutyAssignment::query()->where('user_id', $this->guardId)
+            // By date: duty_date is stored with a time ("… 00:00:00"), so a plain between would drop today.
+            ->whereDate('duty_date', '>=', today()->subDays(Reimbursement::fileWithinDays())->toDateString())
+            ->whereDate('duty_date', '<=', today()->toDateString())
+            ->with(['client', 'absenceNotice.user'])
+            ->orderByDesc('duty_date')->orderByDesc('id')->limit(12)->get();
+    }
+
+    /** "Relief at Metrobank – Imus, Gate 2, Oct 20, for Juan Cruz" or "BDO – Makati, Lobby, Oct 21". */
+    public function dutyLabel(DutyAssignment $duty): string
+    {
+        if ($duty->absenceNotice !== null) {
+            return $duty->absenceNotice->reliefLabel();
+        }
+
+        return collect([$duty->client?->name, $duty->post])->filter()->implode(', ').', '.$duty->duty_date->format('M j');
+    }
+
+    /** A duty picked from the roster: the deployment and the date, filled in; a relief's fare is linked to it. */
+    public function pickDuty(int $dutyId): void
+    {
+        $duty = $this->recentDuties->firstWhere('id', $dutyId);
+        abort_if($duty === null, 404);
+
+        $this->deploymentFor = $this->dutyLabel($duty);
+        $this->deploymentMode = 'picked';
+        $this->spentOn = $duty->duty_date->toDateString();
+
+        // A relief whose fare isn't claimed yet: claim it as that relief (once), as from Relievers.
+        $notice = $duty->absenceNotice;
+        $this->reliefId = $notice !== null && $notice->fareClaimable() && AbsenceNotice::query()->awaitingFareClaim()->whereKey($notice->id)->exists()
+            ? $notice->id
+            : null;
+        $this->resetErrorBag(['deploymentFor', 'relief']);
     }
 
     /**
@@ -133,7 +197,7 @@ class DeploymentClaims extends Component
 
     public function start(): void
     {
-        $this->reset(['guardId', 'personSearch', 'amount', 'purpose', 'deploymentFor', 'receipt', 'acknowledges', 'reliefId']);
+        $this->reset(['guardId', 'personSearch', 'amount', 'purpose', 'deploymentFor', 'deploymentMode', 'deploymentClientId', 'receipt', 'acknowledges', 'reliefId']);
         $this->spentOn = CarbonImmutable::today()->toDateString();
         $this->filing = true;
         $this->resetErrorBag();
@@ -145,10 +209,86 @@ class DeploymentClaims extends Component
         abort_unless(Reimbursement::canFileFor($this->currentUser(), $guard), 403);
 
         $this->guardId = $guard->id;
-        // Their post, as the usual answer; Operations can say otherwise (a relief elsewhere).
-        $this->deploymentFor = (string) $guard->employeeProfile?->assignmentLabel();
         $this->personSearch = '';
-        unset($this->chosen);
+        unset($this->chosen, $this->recentDuties);
+
+        // Always choices first: their roster duties, their usual post, another client's post.
+        $this->deploymentMode = '';
+        $this->deploymentFor = '';
+        $this->deploymentClientId = '';
+    }
+
+    /** Their usual post, from their employee record. */
+    public function usualPost(): ?string
+    {
+        $profile = $this->chosen?->employeeProfile;
+
+        return $profile !== null && $profile->hasDeployment() ? $profile->assignmentLabel() : null;
+    }
+
+    public function pickUsualPost(): void
+    {
+        $post = $this->usualPost();
+        abort_if($post === null, 404);
+
+        $this->deploymentFor = $post;
+        $this->deploymentMode = 'picked';
+        $this->reliefId = null;
+        $this->resetErrorBag(['deploymentFor', 'relief']);
+    }
+
+    /** "Another client's post": the client list opens. */
+    public function chooseClient(): void
+    {
+        $this->deploymentMode = 'client';
+        $this->deploymentClientId = '';
+        $this->reliefId = null;
+    }
+
+    /** A client picked from the list: that post, locked. */
+    public function updatedDeploymentClientId(): void
+    {
+        $client = filled($this->deploymentClientId) ? $this->clientChoices->firstWhere('id', (int) $this->deploymentClientId) : null;
+
+        if ($client !== null) {
+            $this->deploymentFor = $client->name;
+            $this->deploymentMode = 'picked';
+            $this->resetErrorBag(['deploymentFor', 'relief']);
+        }
+    }
+
+    /**
+     * Clients this person deploys to: all, or a Satellite's own region.
+     *
+     * @return Collection<int, Client>
+     */
+    #[Computed]
+    public function clientChoices(): Collection
+    {
+        $me = $this->currentUser();
+
+        return Client::query()
+            ->when($me->isRegionallyLimited(), fn ($query) => $query->where('region', $me->operations_region))
+            ->orderBy('name')->get();
+    }
+
+    /** "Not on the roster? Type it": the text box, empty, and no relief linked. */
+    public function typeDeployment(): void
+    {
+        $this->deploymentMode = 'typed';
+        $this->deploymentFor = '';
+        $this->reliefId = null;
+        $this->resetErrorBag(['deploymentFor', 'relief']);
+    }
+
+    /** Change the picked (or typed) deployment: back to the choices. */
+    public function changeDeployment(): void
+    {
+        $this->deploymentMode = '';
+        $this->deploymentFor = '';
+        $this->deploymentClientId = '';
+        $this->reliefId = null;
+        $this->resetErrorBag(['deploymentFor', 'relief']);
     }
 
     public function closeForm(): void
@@ -159,8 +299,8 @@ class DeploymentClaims extends Component
     public function changeGuard(): void
     {
         // Another guard: no longer that relief's reliever.
-        $this->reset(['guardId', 'deploymentFor', 'reliefId']);
-        unset($this->chosen);
+        $this->reset(['guardId', 'deploymentFor', 'deploymentMode', 'deploymentClientId', 'reliefId']);
+        unset($this->chosen, $this->recentDuties);
     }
 
     public function file(FileReimbursement $file): void
@@ -175,6 +315,7 @@ class DeploymentClaims extends Component
             'acknowledges' => ['accepted'],
         ], [
             'guardId.required' => 'Choose the guard.',
+            'deploymentFor.required' => 'Pick a duty, their post or a client, or type it if it isn\'t on any list.',
             'acknowledges.accepted' => 'Read the points above and tick the box to send.',
             'receipt.required' => 'Attach the receipt (a photo or a PDF).',
             'receipt.mimes' => 'Attach a photo (JPG, PNG) or a PDF.',
