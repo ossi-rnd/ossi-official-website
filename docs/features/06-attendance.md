@@ -55,8 +55,10 @@ RecordPunch::handle()
 | Case | First | Then |
 |---|---|---|
 | Guard on the roster, no clock-in after the grace period | `DetectNoShows`: Operations (region's Satellite, then Operation HQ), Relievers board | — |
-| Anyone still clocked in after the shift | the employee, `clock_out_reminder_minutes` after the shift end | their head, `clock_out_escalate_minutes` after: Operations for a guard (HQ + region's Satellite), President / VP for office staff |
-| Office staffer, no clock-in on a work day | the employee, grace + `office_clock_in_reminder_minutes` after the start | one summary bell per batch to the President / VP |
+| Anyone still clocked in after the shift | the employee, `clock_out_reminder_minutes` after the shift end | their head, `clock_out_escalate_minutes` after |
+| Office staffer, no clock-in on a work day | the employee, grace + `office_clock_in_reminder_minutes` after the start | one summary bell per head per batch, naming only their people |
+
+**Who is the head** (`SendAttendanceAlerts::headsOf`, the owner's chain, 2026-10-23): a guard → Operation HQ and the Satellite of their client's region; HR → the President or VP; a Satellite Operation → Operation HQ; any other office staff (Admin, Accounting, Operation HQ, …) → HR. Never the person themselves.
 
 `SendAttendanceAlerts` (`app:send-attendance-alerts`, every 5 minutes) does the last two rows. It skips approved leave, holidays, and days that aren't office work days. Each alert is claimed once in `sent_alerts`. The numbers and office work days are HR's: Attendance Log → **Alert rules** (`App\Support\AttendanceAlertRules`, `SaveAttendanceAlertRules`, audited; starting values in `config/attendance.php` `alerts`). Office staff have no roster, so the work days are what tell a rest day from a missed one.
 

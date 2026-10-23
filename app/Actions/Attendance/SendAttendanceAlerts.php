@@ -2,8 +2,10 @@
 
 namespace App\Actions\Attendance;
 
+use App\Enums\Region;
 use App\Enums\Role;
 use App\Livewire\Admin\AttendanceLog;
+use App\Models\Client;
 use App\Models\Holiday;
 use App\Models\LeaveRequest;
 use App\Models\SentAlert;
@@ -21,11 +23,10 @@ use Illuminate\Support\Facades\Notification;
  * Run every 5 minutes. Two gaps nobody heard about before (the rules are HR's, AttendanceAlertRules):
  *
  *  1. A missed clock-out. The employee first, some minutes after the shift ended ("clock out
- *     now"); if it's still open later, their head: Operations for a guard (Operation HQ and the
- *     region's Satellite), the President or Vice President for office staff.
+ *     now"); if it's still open later, their head (headsOf: the owner's chain).
  *  2. An office staffer who hasn't clocked in on a work day (not on leave, not a holiday): the
- *     employee first, and one summary bell to the President or Vice President per run, not one
- *     per person. Guards are covered by DetectNoShows (their roster says when they're due).
+ *     employee first, and one summary bell per head per run, naming only the people they head.
+ *     Guards are covered by DetectNoShows (their roster says when they're due).
  *
  * Each alert is claimed in sent_alerts, so it goes once however often this runs.
  */
@@ -76,7 +77,7 @@ final class SendAttendanceAlerts
             }
 
             if ($now->gte($end->addMinutes($rules['clock_out_escalate_minutes'])) && $this->claim('clock_out.escalated', $log)) {
-                Notification::send($this->headsOf($log), new UpdateNotice("Not clocked out: {$log->user->name}",
+                Notification::send($this->headsOf($log->user, $log->dutyAssignment?->client), new UpdateNotice("Not clocked out: {$log->user->name}",
                     "Shift ended at {$ended}; still clocked in since ".$log->clock_in_at?->format('g:i A').'. Check with them, then record the real time.',
                     route('attendance-log', ['show' => AttendanceLog::NOT_CLOCKED_OUT]), 'clock-alert'));
                 $escalated++;
@@ -98,7 +99,9 @@ final class SendAttendanceAlerts
         }
 
         $onLeave = LeaveRequest::query()->approved()->overlapping($today, $today)->pluck('user_id')->flip();
-        $missing = [];
+        $missing = 0;
+        /** @var array<int, array{head: User, names: list<string>}> $byHead each head, and who of theirs is missing */
+        $byHead = [];
 
         $staff = User::query()->onPayroll()
             ->whereHas('employeeProfile', fn ($profile) => $profile->where('is_office_staff', true)->whereNotNull('shift_id'))
@@ -122,37 +125,61 @@ final class SendAttendanceAlerts
             if ($this->claim('office.no_clock_in.'.$today->format('Ymd'), $user)) {
                 UpdateNotice::tell($user, null, 'You haven\'t clocked in today',
                     'Your shift started at '.$start->format('g:i A').'. Clock in on My Attendance, or file leave if you\'re off today.', route('attendance'), 'clock');
-                $missing[] = $user->name.' ('.$start->format('g:i A').')';
+                $missing++;
+
+                foreach ($this->headsOf($user) as $head) {
+                    $byHead[$head->id]['head'] = $head;
+                    $byHead[$head->id]['names'][] = $user->name.' ('.$start->format('g:i A').')';
+                }
             }
         }
 
-        // One bell for the whole batch to the President or Vice President, who head office staff.
-        if ($missing !== []) {
-            Notification::send(User::query()->notifiable(Role::leadership())->get(), new UpdateNotice(
-                count($missing).' office '.str('staffer')->plural(count($missing)).' not clocked in',
-                implode(', ', $missing).'. Not on leave today.', route('attendance-log'), 'clock-alert'));
+        // One bell per head for the whole batch: only the people they head.
+        foreach ($byHead as ['head' => $head, 'names' => $names]) {
+            $head->notify(new UpdateNotice(
+                count($names).' not clocked in yet',
+                implode(', ', $names).'. Not on leave today.', route('attendance-log'), 'clock-alert'));
         }
 
-        return count($missing);
+        return $missing;
     }
 
     /**
-     * Who heads this person: Operation HQ and the Satellite of their client's region for a
-     * guard; the President or Vice President for office staff. Never the person themselves.
+     * Who heads this person for attendance (the owner's chain, 2026-10-23):
+     *
+     *   a guard                         Operation HQ and the Satellite of their client's region
+     *   HR                              the President or Vice President
+     *   Satellite Operation             Operation HQ
+     *   other office staff (Admin,
+     *   Accounting, Operation HQ, …)    HR
+     *
+     * Never the person themselves.
      *
      * @return Collection<int, User>
      */
-    private function headsOf(TimeLog $log): Collection
+    private function headsOf(User $person, ?Client $client = null): Collection
     {
-        $profile = $log->user->employeeProfile;
+        $person->loadMissing(['roles', 'employeeProfile.client']);
+        $profile = $person->employeeProfile;
 
-        if ($profile === null || $profile->is_office_staff) {
-            return User::query()->notifiable(Role::leadership())->whereKeyNot($log->user_id)->get();
-        }
+        $heads = match (true) {
+            $profile !== null && ! $profile->is_office_staff => $this->operationsFor(($client ?? $profile->client)?->region),
+            $person->hasRole(Role::Hr) => User::query()->notifiable(Role::leadership())->get(),
+            $person->hasRole(Role::SatelliteOperations) => User::query()->notifiable([Role::OperationsHq])->get(),
+            default => User::query()->notifiable([Role::Hr])->get(),
+        };
 
-        $region = ($log->dutyAssignment->client ?? $profile->client)?->region;
+        return $heads->reject(fn (User $head) => $head->is($person))->values();
+    }
 
-        return User::query()->notifiable([Role::OperationsHq, Role::SatelliteOperations])->with('roles')->whereKeyNot($log->user_id)->get()
+    /**
+     * Operation HQ, and the Satellite Operation covering this region.
+     *
+     * @return Collection<int, User>
+     */
+    private function operationsFor(?Region $region): Collection
+    {
+        return User::query()->notifiable([Role::OperationsHq, Role::SatelliteOperations])->with('roles')->get()
             ->filter(fn (User $user) => $user->hasRole(Role::OperationsHq) || ($region !== null && $user->operations_region === $region))
             ->values();
     }

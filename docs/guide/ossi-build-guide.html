@@ -13361,7 +13361,7 @@ flowchart TD
     <div><b>Early is free, not paid</b><span>Clock in up to an hour before; late counts from the start, night differential only inside the duty, overtime only when approved.</span></div>
     <div><b>Geofence both ways</b><span>Clock-in and clock-out must be inside the client's radius. The phone's stated error widens it by 50 m at most, and a fix rougher than ±100 m is refused.</span></div>
     <div><b>Manual, never silent</b><span>When a phone or GPS fails, Operations records it by hand with a reason: marked Manual, audited, and never over a selfie punch.</span></div>
-    <div><b>Nobody forgets quietly</b><span><code>SendAttendanceAlerts</code> runs every 5 minutes. Someone still clocked in after their shift is reminded first. If it's still open later, their head hears: Operations for a guard, the President or VP for office staff. An office staffer with no clock-in on a work day is reminded too, and the President or VP gets one summary bell for the batch. Office staff have no roster, so HR's office work days tell a rest day from a missed day. The times are HR's rules on the Attendance Log (<code>AttendanceAlertRules</code>). A guard missing a rostered duty is a no-show, handled by <code>DetectNoShows</code>.</span></div>
+    <div><b>Nobody forgets quietly</b><span><code>SendAttendanceAlerts</code> runs every 5 minutes. Someone still clocked in after their shift is reminded first. If it's still open later, their head hears, following the owner's chain (<code>headsOf</code>): a guard → Operation HQ and the region's Satellite; HR → the President or VP; a Satellite → Operation HQ; other office staff (Admin, Accounting, Operation HQ) → HR. An office staffer with no clock-in on a work day is reminded too, and each head gets one summary bell naming only their people. Office staff have no roster, so HR's office work days tell a rest day from a missed day. The times are HR's rules on the Attendance Log (<code>AttendanceAlertRules</code>). A guard missing a rostered duty is a no-show, handled by <code>DetectNoShows</code>.</span></div>
   </div>
   <details class="file" open><summary>app/Queries/Attendance/CurrentDutyQuery.php<span class="lines">80 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
@@ -13443,12 +13443,14 @@ flowchart TD
         <span class="k">return</span> <span class="k">new</span> <span class="f">DutyForPunch</span>(<span class="k">null</span>, $usualShift, $today, $profile?-&gt;client, $refusal, $next);
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Actions/Attendance/SendAttendanceAlerts.php<span class="lines">164 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/Attendance/SendAttendanceAlerts.php<span class="lines">191 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Attendance;
 
+<span class="k">use</span> App\Enums\Region;
 <span class="k">use</span> App\Enums\Role;
 <span class="k">use</span> App\Livewire\Admin\AttendanceLog;
+<span class="k">use</span> App\Models\Client;
 <span class="k">use</span> App\Models\Holiday;
 <span class="k">use</span> App\Models\LeaveRequest;
 <span class="k">use</span> App\Models\SentAlert;
@@ -13466,11 +13468,10 @@ flowchart TD
  * Run every 5 minutes. Two gaps nobody heard about before (the rules are HR&#039;s, AttendanceAlertRules):
  *
  *  1. A missed clock-out. The employee first, some minutes after the shift ended (&quot;clock out
- *     now&quot;); if it&#039;s still open later, their head: Operations for a guard (Operation HQ and the
- *     region&#039;s Satellite), the President or Vice President for office staff.
+ *     now&quot;); if it&#039;s still open later, their head (headsOf: the owner&#039;s chain).
  *  2. An office staffer who hasn&#039;t clocked in on a work day (not on leave, not a holiday): the
- *     employee first, and one summary bell to the President or Vice President per run, not one
- *     per person. Guards are covered by DetectNoShows (their roster says when they&#039;re due).
+ *     employee first, and one summary bell per head per run, naming only the people they head.
+ *     Guards are covered by DetectNoShows (their roster says when they&#039;re due).
  *
  * Each alert is claimed in sent_alerts, so it goes once however often this runs.
  */</span>
@@ -13521,7 +13522,7 @@ flowchart TD
             }
 
             <span class="k">if</span> ($now-&gt;<span class="f">gte</span>($end-&gt;<span class="f">addMinutes</span>($rules[<span class="s">&#039;clock_out_escalate_minutes&#039;</span>])) &amp;&amp; $this-&gt;<span class="f">claim</span>(<span class="s">&#039;clock_out.escalated&#039;</span>, $log)) {
-                Notification::<span class="f">send</span>($this-&gt;<span class="f">headsOf</span>($log), <span class="k">new</span> <span class="f">UpdateNotice</span>(<span class="s">&quot;Not clocked out: {$log-&gt;user-&gt;name}&quot;</span>,
+                Notification::<span class="f">send</span>($this-&gt;<span class="f">headsOf</span>($log-&gt;user, $log-&gt;dutyAssignment?-&gt;client), <span class="k">new</span> <span class="f">UpdateNotice</span>(<span class="s">&quot;Not clocked out: {$log-&gt;user-&gt;name}&quot;</span>,
                     <span class="s">&quot;Shift ended at {$ended}; still clocked in since &quot;</span>.$log-&gt;clock_in_at?-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;. Check with them, then record the real time.&#039;</span>,
                     <span class="f">route</span>(<span class="s">&#039;attendance-log&#039;</span>, [<span class="s">&#039;show&#039;</span> =&gt; AttendanceLog::NOT_CLOCKED_OUT]), <span class="s">&#039;clock-alert&#039;</span>));
                 $escalated++;
@@ -13543,7 +13544,9 @@ flowchart TD
         }
 
         $onLeave = LeaveRequest::<span class="f">query</span>()-&gt;<span class="f">approved</span>()-&gt;<span class="f">overlapping</span>($today, $today)-&gt;<span class="f">pluck</span>(<span class="s">&#039;user_id&#039;</span>)-&gt;<span class="f">flip</span>();
-        $missing = [];
+        $missing = <span class="n">0</span>;
+        <span class="c">/** @var array&lt;int, array{head: User, names: list&lt;string&gt;}&gt; $byHead each head, and who of theirs is missing */</span>
+        $byHead = [];
 
         $staff = User::<span class="f">query</span>()-&gt;<span class="f">onPayroll</span>()
             -&gt;<span class="f">whereHas</span>(<span class="s">&#039;employeeProfile&#039;</span>, <span class="k">fn</span> ($profile) =&gt; $profile-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, <span class="k">true</span>)-&gt;<span class="f">whereNotNull</span>(<span class="s">&#039;shift_id&#039;</span>))
@@ -13567,37 +13570,61 @@ flowchart TD
             <span class="k">if</span> ($this-&gt;<span class="f">claim</span>(<span class="s">&#039;office.no_clock_in.&#039;</span>.$today-&gt;<span class="f">format</span>(<span class="s">&#039;Ymd&#039;</span>), $user)) {
                 UpdateNotice::<span class="f">tell</span>($user, <span class="k">null</span>, <span class="s">&#039;You haven\&#039;t clocked in today&#039;</span>,
                     <span class="s">&#039;Your shift started at &#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;. Clock in on My Attendance, or file leave if you\&#039;re off today.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;attendance&#039;</span>), <span class="s">&#039;clock&#039;</span>);
-                $missing[] = $user-&gt;name.<span class="s">&#039; (&#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;)&#039;</span>;
+                $missing++;
+
+                <span class="k">foreach</span> ($this-&gt;<span class="f">headsOf</span>($user) <span class="k">as</span> $head) {
+                    $byHead[$head-&gt;id][<span class="s">&#039;head&#039;</span>] = $head;
+                    $byHead[$head-&gt;id][<span class="s">&#039;names&#039;</span>][] = $user-&gt;name.<span class="s">&#039; (&#039;</span>.$start-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039;)&#039;</span>;
+                }
             }
         }
 
-        <span class="c">// One bell for the whole batch to the President or Vice President, who head office staff.</span>
-        <span class="k">if</span> ($missing !== []) {
-            Notification::<span class="f">send</span>(User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Role::<span class="f">leadership</span>())-&gt;<span class="f">get</span>(), <span class="k">new</span> <span class="f">UpdateNotice</span>(
-                <span class="f">count</span>($missing).<span class="s">&#039; office &#039;</span>.<span class="f">str</span>(<span class="s">&#039;staffer&#039;</span>)-&gt;<span class="f">plural</span>(<span class="f">count</span>($missing)).<span class="s">&#039; not clocked in&#039;</span>,
-                <span class="f">implode</span>(<span class="s">&#039;, &#039;</span>, $missing).<span class="s">&#039;. Not on leave today.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;attendance-log&#039;</span>), <span class="s">&#039;clock-alert&#039;</span>));
+        <span class="c">// One bell per head for the whole batch: only the people they head.</span>
+        <span class="k">foreach</span> ($byHead <span class="k">as</span> [<span class="s">&#039;head&#039;</span> =&gt; $head, <span class="s">&#039;names&#039;</span> =&gt; $names]) {
+            $head-&gt;<span class="f">notify</span>(<span class="k">new</span> <span class="f">UpdateNotice</span>(
+                <span class="f">count</span>($names).<span class="s">&#039; not clocked in yet&#039;</span>,
+                <span class="f">implode</span>(<span class="s">&#039;, &#039;</span>, $names).<span class="s">&#039;. Not on leave today.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;attendance-log&#039;</span>), <span class="s">&#039;clock-alert&#039;</span>));
         }
 
-        <span class="k">return</span> <span class="f">count</span>($missing);
+        <span class="k">return</span> $missing;
     }
 
     <span class="c">/**
-     * Who heads this person: Operation HQ and the Satellite of their client&#039;s region for a
-     * guard; the President or Vice President for office staff. Never the person themselves.
+     * Who heads this person for attendance (the owner&#039;s chain, 2026-10-23):
+     *
+     *   a guard                         Operation HQ and the Satellite of their client&#039;s region
+     *   HR                              the President or Vice President
+     *   Satellite Operation             Operation HQ
+     *   other office staff (Admin,
+     *   Accounting, Operation HQ, …)    HR
+     *
+     * Never the person themselves.
      *
      * @return Collection&lt;int, User&gt;
      */</span>
-    <span class="k">private</span> <span class="k">function</span> <span class="f">headsOf</span>(TimeLog $log): Collection
+    <span class="k">private</span> <span class="k">function</span> <span class="f">headsOf</span>(User $person, ?Client $client = <span class="k">null</span>): Collection
     {
-        $profile = $log-&gt;user-&gt;employeeProfile;
+        $person-&gt;<span class="f">loadMissing</span>([<span class="s">&#039;roles&#039;</span>, <span class="s">&#039;employeeProfile.client&#039;</span>]);
+        $profile = $person-&gt;employeeProfile;
 
-        <span class="k">if</span> ($profile === <span class="k">null</span> || $profile-&gt;is_office_staff) {
-            <span class="k">return</span> User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Role::<span class="f">leadership</span>())-&gt;<span class="f">whereKeyNot</span>($log-&gt;user_id)-&gt;<span class="f">get</span>();
-        }
+        $heads = <span class="k">match</span> (<span class="k">true</span>) {
+            $profile !== <span class="k">null</span> &amp;&amp; ! $profile-&gt;is_office_staff =&gt; $this-&gt;<span class="f">operationsFor</span>(($client ?? $profile-&gt;client)?-&gt;region),
+            $person-&gt;<span class="f">hasRole</span>(Role::Hr) =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Role::<span class="f">leadership</span>())-&gt;<span class="f">get</span>(),
+            $person-&gt;<span class="f">hasRole</span>(Role::SatelliteOperations) =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq])-&gt;<span class="f">get</span>(),
+            <span class="k">default</span> =&gt; User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::Hr])-&gt;<span class="f">get</span>(),
+        };
 
-        $region = ($log-&gt;dutyAssignment-&gt;client ?? $profile-&gt;client)?-&gt;region;
+        <span class="k">return</span> $heads-&gt;<span class="f">reject</span>(<span class="k">fn</span> (User $head) =&gt; $head-&gt;<span class="f">is</span>($person))-&gt;<span class="f">values</span>();
+    }
 
-        <span class="k">return</span> User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq, Role::SatelliteOperations])-&gt;<span class="f">with</span>(<span class="s">&#039;roles&#039;</span>)-&gt;<span class="f">whereKeyNot</span>($log-&gt;user_id)-&gt;<span class="f">get</span>()
+    <span class="c">/**
+     * Operation HQ, and the Satellite Operation covering this region.
+     *
+     * @return Collection&lt;int, User&gt;
+     */</span>
+    <span class="k">private</span> <span class="k">function</span> <span class="f">operationsFor</span>(?Region $region): Collection
+    {
+        <span class="k">return</span> User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>([Role::OperationsHq, Role::SatelliteOperations])-&gt;<span class="f">with</span>(<span class="s">&#039;roles&#039;</span>)-&gt;<span class="f">get</span>()
             -&gt;<span class="f">filter</span>(<span class="k">fn</span> (User $user) =&gt; $user-&gt;<span class="f">hasRole</span>(Role::OperationsHq) || ($region !== <span class="k">null</span> &amp;&amp; $user-&gt;operations_region === $region))
             -&gt;<span class="f">values</span>();
     }
@@ -20493,7 +20520,7 @@ flowchart LR
     ['A guard\'s birthday is today. Who gets a bell?', ['Everyone in the company', 'HR, Operation HQ and the Satellite of the guard\'s region, unless the guard keeps it private', 'Only the guard', 'Only HR'], 1, 'SendBirthdayReminders: HR for everyone, Operations for guards (a Satellite its region). Never the age; nobody if birthday_private.'],
     ['A petty cash fund of ₱5,000 has ₱1,500 of expenses in a request still waiting for Accounting. What is the cash on hand?', ['₱5,000', '₱3,500', '₱1,500', '₱6,500'], 1, 'cashOnHand() = fund − expenses not yet replenished, which includes those in a pending request. Only a released request brings the cash back.'],
     ['A referred hire leaves 60 days in; the terms say 90. What happens on the referrer\'s next payslip after the due date?', ['The bonus is paid anyway', 'No bonus: the referral is closed and the referrer told', 'Half the bonus', 'HR decides by hand'], 1, 'PayDueReferralBonuses checks Referral::hireStayed(): still working, or a last day on or after the due date. Otherwise Forfeited.'],
-    ['An office staffer is still clocked in two hours after their shift ended. Who has been told?', ['Nobody: it only shows on the Attendance Log', 'The employee (after 30 min), then the President or VP (after 2 hours)', 'Operation HQ', 'HR only'], 1, 'SendAttendanceAlerts reminds the employee first, then their head: the President or VP for office staff, Operations for a guard. The minutes are HR\'s Alert rules.'],
+    ['An Accounting clerk is still clocked in two hours after their shift ended. Who has been told?', ['Nobody: it only shows on the Attendance Log', 'The clerk (after 30 min), then HR, their head (after 2 hours)', 'Operation HQ', 'The President or VP'], 1, 'SendAttendanceAlerts reminds the employee first, then their head: HR for office staff like Accounting, the President or VP for HR, Operation HQ for a Satellite, both Operations for a guard. The minutes are HR\'s Alert rules.'],
     ['On Roles & Access, can one person be both HR and Admin?', ['Yes, tick both', 'No: one role per person; Employee is automatic for anyone with an employee record', 'Only the Super Admin can', 'Yes, if they are office staff'], 1, 'The picker is radio buttons (one job role). Access per role (Ability::roles()) didn\'t change; only the picker did.'],
     ['HR adds a Passport under Other IDs. What does the audit log record?', ['The passport number', 'That other_ids changed, not the number', 'Nothing', 'Only the label'], 1, 'other_ids is encrypted at rest (encrypted:array) and listed in EmployeeProfile::SENSITIVE, so AuditLogger::diff writes (changed) instead of the value.'],
     ['A guard clocks in on a borrowed phone. What happens?', ['The clock-in is refused', 'It counts, is marked Other phone, and Operation HQ, HR and their Satellite Operation get one bell that day', 'Nothing: phones aren\'t tracked', 'The borrowed phone becomes theirs'], 1, 'Flag, never refuse (CheckPunchDevice + ReportOtherPhone). Only a supervisor makes another phone theirs (SetGuardPhone), from the Attendance Log.'],

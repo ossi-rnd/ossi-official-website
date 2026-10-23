@@ -62,23 +62,35 @@ it('reminds a guard who forgot to clock out, then tells Operations of their regi
     expect(app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 20:00'))['escalated'])->toBe(0);
 });
 
-it('tells the President or VP when office staff forget to clock out', function () {
+it('tells each office staffer\'s own head about a missed clock-out: HR, the President or VP, Operation HQ', function () {
+    $hr = staff(Role::Hr);
     $clerk = staff(Role::Accounting);
-    alertOpenLog($clerk, $this->shift, '2026-10-22', '08:02');
+    $headOfOperations = staff(Role::OperationsHq);
+    foreach ([$hr, $clerk, $this->ncrSatellite, $headOfOperations] as $person) {
+        alertOpenLog($person, $this->shift, '2026-10-22', '08:02');
+    }
 
     app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 19:30'));
 
-    Notification::assertSentTo($clerk, UpdateNotice::class, titled('You haven\'t clocked out'));
-    Notification::assertSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$clerk->name}"));
-    Notification::assertNotSentTo($this->hq, UpdateNotice::class);
+    // Accounting (and Operation HQ) → HR.
+    Notification::assertSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$clerk->name}"));
+    Notification::assertSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$headOfOperations->name}"));
+    Notification::assertNotSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$clerk->name}"));
+    // HR → the President or VP.
+    Notification::assertSentTo($this->president, UpdateNotice::class, titled("Not clocked out: {$hr->name}"));
+    // A Satellite → Operation HQ, not HR.
+    Notification::assertSentTo($this->hq, UpdateNotice::class, titled("Not clocked out: {$this->ncrSatellite->name}"));
+    Notification::assertNotSentTo($hr, UpdateNotice::class, titled("Not clocked out: {$this->ncrSatellite->name}"));
 });
 
-it('reminds office staff who haven\'t clocked in, with one summary to the President or VP', function () {
+it('reminds office staff who haven\'t clocked in, with one summary to each head', function () {
+    $hrHead = staff(Role::Hr);
     $late = staff(Role::Accounting);
     $alsoLate = staff(Role::Admin);
-    $onLeave = staff(Role::Hr);
-    $in = staff(Role::Hr);
-    foreach ([$late, $alsoLate, $onLeave, $in] as $person) {
+    $onLeave = staff(Role::Accounting);
+    $in = staff(Role::Accounting);
+    $lateHr = staff(Role::Hr);
+    foreach ([$late, $alsoLate, $onLeave, $in, $lateHr] as $person) {
         $person->employeeProfile?->forceFill(['shift_id' => $this->shift->id])->save();
     }
     $leave = new LeaveRequest(['type' => 'vacation', 'start_date' => '2026-10-22', 'end_date' => '2026-10-22', 'reason' => 'Rest']);
@@ -87,12 +99,15 @@ it('reminds office staff who haven\'t clocked in, with one summary to the Presid
     alertOpenLog($in, $this->shift, '2026-10-22', '08:00');
 
     // Thursday 08:45: past 08:00 + 10 min grace + 30 min.
-    expect(app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 08:45'))['officeMissing'])->toBe(2);
+    expect(app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 08:45'))['officeMissing'])->toBe(3);
 
-    Notification::assertSentTo([$late, $alsoLate], UpdateNotice::class, titled('You haven\'t clocked in today'));
+    Notification::assertSentTo([$late, $alsoLate, $lateHr], UpdateNotice::class, titled('You haven\'t clocked in today'));
     Notification::assertNotSentTo([$onLeave, $in], UpdateNotice::class);
-    Notification::assertSentToTimes($this->president, UpdateNotice::class, 1);
-    Notification::assertSentTo($this->president, UpdateNotice::class, titled('2 office staffers not clocked in'));
+
+    // HR hears about Accounting and Admin in one bell; the President or VP only about HR.
+    Notification::assertSentToTimes($hrHead, UpdateNotice::class, 1);
+    Notification::assertSentTo($hrHead, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === '2 not clocked in yet' && ! str_contains($notice->body, $lateHr->name));
+    Notification::assertSentTo($this->president, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === '1 not clocked in yet' && str_contains($notice->body, $lateHr->name));
 
     // Not again the same day.
     expect(app(SendAttendanceAlerts::class)->handle(CarbonImmutable::parse('2026-10-22 10:00'))['officeMissing'])->toBe(0);

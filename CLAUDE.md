@@ -28,6 +28,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 - Operations (Operation HQ, Satellite) sees **guards only**. Office staff answer to the President / VP. This is enforced in `User::scopeVisibleTo`, `EmployeeProfile::scopeVisibleTo` and `User::canSeeProfile` (no `view-office-staff` means guards only).
 - Office positions mirror the roles: Admin, HR, Accounting, IT, Operations Head, Satellite Operations Officer (`Position::for(true)`). Security Manager, President and VP are retired as positions.
 - Clients (guards' sites) and OSSI Offices (head office and branches) are separate tables with the same location picker. There is **no** "OSSI Head Office" office pre-created; the owner adds their own.
+- **Attendance heads** (for missed clock-outs and no clock-ins): a guard → Operation HQ + their region's Satellite; HR → the President or VP; a Satellite Operation → Operation HQ; other office staff (Admin, Accounting, Operation HQ…) → HR. The code is in `SendAttendanceAlerts::headsOf`.
 - Notify everyone affected: any Action that changes something about **someone other than the actor** tells them (`UpdateNotice::tell()` / `tellProfile()` for plain updates). Settings and the actor's own changes stay quiet.
 - The privacy notice never relies on "consent" (a test enforces it). Bump `config/privacy.php` `version` when its text changes (now `2026-10-22.1`; `.env` may override with `PRIVACY_NOTICE_VERSION`).
 
@@ -35,7 +36,7 @@ Attendance, payroll and guard operations for **OSSI (Oriental Sentinel Services 
 
 1. Pint (`vendor/bin/pint <paths>`; `--dirty` needs git), PHPStan (`vendor/bin/phpstan analyse --memory-limit=1G`), and the **full** suite (`php artisan test --parallel`) all pass. Run `php artisan view:cache` after Blade edits, and `npm run build` after JS or CSS changes.
 2. `docs/CHANGELOG.md` gets an entry under today's date, and the right `docs/features/*.md` is updated.
-3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 158 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
+3. The **study guide** is updated by hand: the right chapter in `docs/guide/template.html` (plus a nav entry and a quiz question for a new idea, and a row in chapter "Patterns & lessons" for a lesson). Then run `php docs/guide/build.php` and republish the Claude artifact **https://claude.ai/artifact/Xf6ow9AahUn9mnyq3KGRq2** (version 159 on 2026-10-23). `build.php` only refreshes `@@code(path)@@` listings; chapters are hand-written. Quiz strings are JS: escape apostrophes as `\'`, never `''`.
 4. Mention honestly anything that went wrong, and how it was fixed.
 
 ## Safety rules (learned the hard way)

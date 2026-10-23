@@ -4,6 +4,14 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-22
 
+**Attendance alerts go to the person's own head (the owner's chain)**
+- A missed clock-out, and an office staffer who hasn't clocked in, now alert the person's actual head (`SendAttendanceAlerts::headsOf`):
+  - **HR** → the President or VP
+  - **Admin, Accounting, Operation HQ and other office staff** → HR
+  - **Satellite Operation** → Operation HQ
+  - **Guards** → both Operations (Operation HQ and their region's Satellite)
+- The "not clocked in" summary is now one bell **per head**, naming only the people they head. Before, every office alert went to the President or VP.
+
 **Attendance alerts: missed clock-outs and office staff not clocked in**
 - Before, only a guard missing a rostered duty raised an alert (a no-show, to Operations). A forgotten clock-out showed only on the Attendance Log, and an office staffer who never clocked in told nobody.
 - Now `app:send-attendance-alerts` runs every 5 minutes (`SendAttendanceAlerts`):
