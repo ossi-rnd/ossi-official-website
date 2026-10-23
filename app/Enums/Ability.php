@@ -76,7 +76,9 @@ enum Ability: string
             // you, the people by area, today's attendance), so each role sees its part.
             self::AccessEmployerArea => [Role::Admin, Role::SuperAdmin, ...Role::leadership(), Role::Hr, Role::Accounting, Role::OperationsHq, Role::SatelliteOperations],
             // The attendance log (read-only).
-            self::SuperviseAttendance => [Role::Admin, Role::Hr, Role::SuperAdmin, ...Role::leadership(), Role::OperationsHq, Role::SatelliteOperations],
+            // Accounting too (2026-10-23, the owner's choice): payroll comes from attendance, so they
+            // check the log behind a payslip, with the same detail as HR.
+            self::SuperviseAttendance => [Role::Admin, Role::Hr, Role::Accounting, Role::SuperAdmin, ...Role::leadership(), Role::OperationsHq, Role::SatelliteOperations],
             // The leave and overtime lists. Deciding needs one of the review gates below.
             self::MonitorRequests => [Role::Admin, Role::Hr, Role::SuperAdmin, ...Role::leadership(), Role::OperationsHq, Role::SatelliteOperations],
             // Guards' (field staff) leave: HR has the final say, after Operations endorses it.

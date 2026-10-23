@@ -86,7 +86,7 @@ it('shows HR what waits for them, their people numbers, the areas and today', fu
         ->assertDontSee('Latest payroll run')->assertDontSee('Relievers sent');
 });
 
-it('shows Accounting the payroll run and headcount by area, but not the attendance', function () {
+it('shows Accounting the payroll run, headcount by area, and today\'s attendance', function () {
     PayrollRun::query()->forceCreate(['start_date' => '2026-10-01', 'end_date' => '2026-10-15', 'pay_date' => '2026-10-20', 'status' => 'processing']);
 
     Livewire::actingAs(staff(Role::Accounting))->test(AttendanceDashboard::class)
@@ -96,7 +96,8 @@ it('shows Accounting the payroll run and headcount by area, but not the attendan
         // The run to finish, with the guards who worked and have no payslip yet.
         ->assertSee('Runs to finish')->assertSee('October 1–15, 2026')->assertSee('0 payslips')
         ->assertSee('People by area')->assertSee('Metrobank – Imus')
-        ->assertDontSee('Not in yet')->assertDontSee("Today's DTR")
+        // Attendance too (2026-10-23): payroll comes from it.
+        ->assertSee('Not in yet')
         ->assertDontSee('Probation ending');
 });
 

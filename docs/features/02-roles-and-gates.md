@@ -26,7 +26,7 @@
 | Gate | Roles | Pages / actions |
 | --- | --- | --- |
 | access-employer-area | Admin, Super Admin, President, Vice President, Operation HQ, Satellite | Dashboard |
-| supervise-attendance | Admin, HR, Super Admin, President, Vice President, Operation HQ, Satellite | Attendance Log |
+| supervise-attendance | Admin, HR, Accounting (since 2026-10-23: payroll comes from attendance), Super Admin, President, Vice President, Operation HQ, Satellite | Attendance Log, with selfies and locations; attendance on the dashboard |
 | monitor-requests | Admin, HR, Super Admin, President, Vice President, Operation HQ, Satellite | Leave Requests and Overtime Requests (the lists) |
 | review-field-leave | HR, Super Admin | Deciding a **guard's** leave (final, after Operations endorses it) |
 | endorse-guard-leave | Satellite Operation (its region), Operation HQ | Endorsing a guard's leave up to HR |

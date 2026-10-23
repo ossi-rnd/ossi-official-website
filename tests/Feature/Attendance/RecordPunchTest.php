@@ -133,7 +133,9 @@ describe('punch photos and geocoding', function () {
         $this->actingAs($this->employee)->get(route('punches.photo', $punch))->assertOk();
         $this->actingAs(staff(Role::Hr))->get(route('punches.photo', $punch))->assertOk();
         $this->actingAs(employee())->get(route('punches.photo', $punch))->assertForbidden();
-        $this->actingAs(staff(Role::Accounting))->get(route('punches.photo', $punch))->assertForbidden();
+        // Accounting checks the log behind payslips (2026-10-23), so it sees the photos too; a Developer doesn't.
+        $this->actingAs(staff(Role::Accounting))->get(route('punches.photo', $punch))->assertOk();
+        $this->actingAs(staff(Role::Developer))->get(route('punches.photo', $punch))->assertForbidden();
     });
 
     it('looks up an address, and reports a failed lookup without breaking', function () {

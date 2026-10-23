@@ -100,3 +100,16 @@ it('shows entries Operations made by hand, which have no selfie', function () {
 it('ignores an unknown view in the address', function () {
     Livewire::actingAs($this->hr)->test(AttendanceLog::class)->call('showOnly', 'everything')->assertSet('show', AttendanceLog::ALL);
 });
+
+it('lets Accounting check the full log behind a payslip, selfies and locations too', function () {
+    $yesterday = CarbonImmutable::parse('2026-10-20');
+    $log = TimeLog::factory()->for(($this->named)('Lito Late'))->on($yesterday)->create(['shift_id' => $this->day->id]);
+    $in = ($this->punch)($log, PunchType::ClockIn, $yesterday->setTime(9, 25));
+
+    $accounting = staff(Role::Accounting);
+    $this->actingAs($accounting)->get(route('attendance-log'))->assertOk();
+    Livewire::actingAs($accounting)->test(AttendanceLog::class)
+        ->assertSee('Lito Late')->assertSee('Clock in selfie of Lito Late')
+        ->assertSee('https://www.google.com/maps/search/?api=1&query=14.66708,121.01616');
+    expect($accounting->can('viewPhoto', $in))->toBeTrue();
+});

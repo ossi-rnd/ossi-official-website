@@ -66,7 +66,7 @@ return [
     |--------------------------------------------------------------------------
     */
 
-    'version' => env('PRIVACY_NOTICE_VERSION', '2026-10-22.1'),
+    'version' => env('PRIVACY_NOTICE_VERSION', '2026-10-23.1'),
 
     /*
     |--------------------------------------------------------------------------
@@ -191,7 +191,7 @@ return [
             'body' => [
                 'You, for your own records, at any time through this system.',
                 'HR staff: employee records, leave and overtime.',
-                'Accounting staff: payroll figures, deductions and reimbursements.',
+                'Accounting staff: payroll figures, deductions and reimbursements, and the attendance records behind payroll (including the photograph and location of each clock-in and clock-out), to check what is paid.',
                 'Supervisors and administrators: attendance for the personnel they supervise.',
                 'Government agencies where reporting is required by law: the Social Security System, PhilHealth, the Pag-IBIG Fund, the Bureau of Internal Revenue, the Department of Labor and Employment, and the PNP Supervisory Office for Security and Investigation Agencies.',
                 'Client establishments, limited to the fact of your assignment to their post and the times you were on duty there, where the service contract requires it.',

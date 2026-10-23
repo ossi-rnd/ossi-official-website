@@ -4,6 +4,15 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Accounting sees the Attendance Log**
+- **Why:** payroll is computed from attendance (days, minutes late, overtime), so Accounting can now open the **Attendance Log**, with the same detail as HR (the owner's choice): selfies, addresses, map links. Their dashboard also shows today's attendance.
+- **Unchanged:** editing the attendance alert rules stays with HR.
+- **Privacy notice:** "Who we share it with" now says Accounting sees the attendance records behind payroll, photograph and location included. The version is bumped to **2026-10-23.1** (config and `.env.example`), so everyone acknowledges it again. **The owner's `.env` pins its own `PRIVACY_NOTICE_VERSION` and must be updated to take effect.**
+- **Tests:**
+  - a new one: Accounting opens the log and can view a punch photo;
+  - two old ones updated: a Developer, not Accounting, is now the role refused a photo, and the Accounting dashboard now shows attendance.
+  - 978 pass.
+
 **Late deduction: exact minutes only; brackets removed**
 - **The owner's question:** do we need late brackets? Their idea was daily rate ÷ hours, rounded up to a whole hour once past grace.
 - **What was chosen:** **exact minutes**. The deduction is the minutes late after the grace period × the hourly rate (daily rate ÷ 8 ÷ 60), which was already the rule whenever no bracket was set.
