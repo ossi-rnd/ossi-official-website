@@ -35,9 +35,9 @@ final class RequestEquipment
             throw ValidationException::withMessages(['requestItem' => 'That item is no longer given out.']);
         }
 
-        $size = $item->has_sizes ? $size : null;
+        $size = $item->hasSizes() ? $size : null;
 
-        if ($item->has_sizes && ! in_array($size, EquipmentItem::SIZES, true)) {
+        if ($item->hasSizes() && ! in_array($size, $item->sizeList(), true)) {
             throw ValidationException::withMessages(['requestSize' => 'Choose your size.']);
         }
 
@@ -53,7 +53,7 @@ final class RequestEquipment
                 'label' => $item->name,
                 'size' => $size,
                 'quantity' => $quantity,
-                'unit_price' => $item->unit_price,
+                'unit_price' => ($price = $item->priceFor($size)) === null ? null : number_format($price, 2, '.', ''),
                 'charged' => false, // set when it's issued
                 'status' => EquipmentStatus::Requested,
                 'request_note' => filled($note) ? mb_substr(trim((string) $note), 0, 500) : null,

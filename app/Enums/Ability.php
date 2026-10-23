@@ -64,6 +64,7 @@ enum Ability: string
     case ManageReferrals = 'manage-referrals';
     case IssueEquipment = 'issue-equipment';
     case ManageEquipmentItems = 'manage-equipment-items';
+    case SetEquipmentPrices = 'set-equipment-prices';
 
     /**
      * @return list<Role>
@@ -178,8 +179,10 @@ enum Ability: string
             // guards it deploys (a Satellite: its region's), Admin to office staff
             // (EquipmentIssue::canIssueTo says which person).
             self::IssueEquipment => [Role::OperationsHq, Role::SatelliteOperations, Role::Admin, Role::SuperAdmin],
-            // The item list and prices: Admin keeps the stock list.
+            // The item list and its sizes: Admin keeps the stock list...
             self::ManageEquipmentItems => [Role::Admin, Role::SuperAdmin],
+            // ...and Accounting sets what each costs (the owner's choice, 2026-10-23).
+            self::SetEquipmentPrices => [Role::Accounting, Role::SuperAdmin],
         };
     }
 

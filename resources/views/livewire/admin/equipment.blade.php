@@ -8,6 +8,7 @@
         $money = fn ($amount) => '₱'.number_format((float) $amount, 2);
     @endphp
 
+    @if ($this->seesDesk())
     <x-ui.card title="Equipment" :description="$this->issues()
         ? 'Uniforms, radios and gear. A uniform is charged, once they authorize the deduction. Company property is theirs to look after, and is charged only if lost or damaged through their fault, after they are heard.'
         : 'Damage and loss reports for the people you head. You decide them once they have explained, or the days to explain have passed.'">
@@ -167,30 +168,49 @@
         </div>
     </x-ui.card>
 
-    @can('manage-equipment-items')
-        <x-ui.card title="Items and prices" description="What can be issued. A uniform needs its price: it's charged to the employee, with their authority to deduct. Radios come from the Radios masterlist.">
-            <x-slot:actions>
-                <x-ui.button type="button" variant="secondary" size="sm" wire:click="startItem"><x-icon name="plus" class="h-4 w-4" /> Add item</x-ui.button>
-            </x-slot:actions>
+    @endif
+
+    @php
+        $managesItems = $viewer->can('manage-equipment-items');
+        $setsPrices = $viewer->can('set-equipment-prices');
+    @endphp
+    @if ($managesItems || $setsPrices)
+        <x-ui.card title="Items and prices" :description="'Admin keeps the items and their sizes; '.($setsPrices ? 'you set the prices.' : 'Accounting sets the prices.').' A uniform is charged to the employee, with their authority to deduct, so it can\'t be issued until it has a price. Radios come from the Radios masterlist.'">
+            @if ($managesItems)
+                <x-slot:actions>
+                    <x-ui.button type="button" variant="secondary" size="sm" wire:click="startItem"><x-icon name="plus" class="h-4 w-4" /> Add item</x-ui.button>
+                </x-slot:actions>
+            @endif
             <div class="overflow-x-auto">
                 <table class="ui-table">
-                    <thead><tr><th class="ui-th">Item</th><th class="ui-th">Kind</th><th class="ui-th">Price</th><th class="ui-th"><span class="sr-only">Actions</span></th></tr></thead>
+                    <thead><tr><th class="ui-th">Item</th><th class="ui-th">Kind</th><th class="ui-th">Sizes</th><th class="ui-th">Price</th><th class="ui-th"><span class="sr-only">Actions</span></th></tr></thead>
                     <tbody>
                         @forelse ($this->allItems as $item)
                             <tr wire:key="item-{{ $item->id }}" @class(['opacity-60' => ! $item->is_active])>
-                                <td class="ui-td font-medium text-gray-800 dark:text-gray-100">{{ $item->name }}{{ $item->has_sizes ? ' · sizes' : '' }}{{ $item->is_active ? '' : ' · not given out' }}</td>
+                                <td class="ui-td font-medium text-gray-800 dark:text-gray-100">{{ $item->name }}{{ $item->is_active ? '' : ' · not given out' }}</td>
                                 <td class="ui-td">{{ $item->kind->shortLabel() }}</td>
-                                <td class="ui-td tabular-nums">{{ $item->priceLabel() }}</td>
-                                <td class="ui-td text-right"><button type="button" wire:click="startItem({{ $item->id }})" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Edit</button></td>
+                                <td class="ui-td text-xs">{{ $item->hasSizes() ? implode(', ', $item->sizeList()) : 'One size' }}</td>
+                                <td class="ui-td whitespace-nowrap tabular-nums">
+                                    {{ $item->priceLabel() }}
+                                    @if ($item->is_active && $item->needsPrice())<x-ui.badge tone="amber">Needs a price</x-ui.badge>@endif
+                                </td>
+                                <td class="ui-td text-right whitespace-nowrap">
+                                    @if ($setsPrices)
+                                        <button type="button" wire:click="startPricing({{ $item->id }})" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Set price</button>
+                                    @endif
+                                    @if ($managesItems)
+                                        <button type="button" wire:click="startItem({{ $item->id }})" class="ml-3 font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">Edit</button>
+                                    @endif
+                                </td>
                             </tr>
                         @empty
-                            <tr><td colspan="4" class="ui-td py-8 text-center">No items yet. Add your uniforms (with prices) and gear such as flashlights and raincoats.</td></tr>
+                            <tr><td colspan="5" class="ui-td py-8 text-center">No items yet. {{ $managesItems ? 'Add your uniforms and gear such as flashlights and raincoats.' : 'Admin adds them.' }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
         </x-ui.card>
-    @endcan
+    @endif
 
     {{-- Issue --}}
     @if ($issuing)
@@ -223,21 +243,22 @@
                     <x-ui.select label="Item" wire:model.live="issueItemId">
                         <option value="">Choose an item</option>
                         @foreach ($this->activeItems as $item)
-                            <option value="{{ $item->id }}">{{ $item->name }} · {{ $item->kind->shortLabel() }}{{ $item->unit_price ? ' · '.$item->priceLabel() : '' }}</option>
+                            <option value="{{ $item->id }}">{{ $item->name }} · {{ $item->kind->shortLabel() }}{{ $item->kind === \App\Enums\EquipmentKind::Uniform ? ' · '.$item->priceLabel() : '' }}</option>
                         @endforeach
                     </x-ui.select>
                     <div class="grid grid-cols-2 gap-4">
-                        @if ($picked?->has_sizes)
-                            <x-ui.select label="Size" wire:model="issueSize">
+                        @if ($picked?->hasSizes())
+                            <x-ui.select label="Size" wire:model.live="issueSize">
                                 <option value="">Choose</option>
-                                @foreach (\App\Models\EquipmentItem::SIZES as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach
+                                @foreach ($picked->sizeList() as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach
                             </x-ui.select>
                         @endif
                         <x-ui.input label="Quantity" type="number" min="1" max="{{ \App\Actions\Equipment\IssueEquipment::MAX_QUANTITY }}" wire:model.live.debounce.300ms="issueQuantity" />
                     </div>
                     @if ($picked?->kind === \App\Enums\EquipmentKind::Uniform)
+                        @php $unit = $picked->priceFor($picked->hasSizes() ? ($issueSize ?: null) : null); @endphp
                         <x-ui.input label="Deduct per payslip (₱)" type="number" step="0.01" min="0.01" wire:model="issueInstallment"
-                            :hint="'Total '.$money((float) $picked->unit_price * max(1, (int) $issueQuantity)).'. They must authorize it on My Payslips before anything is deducted.'" />
+                            :hint="$picked->hasSizes() && $issueSize === '' ? 'Choose the size to see the total. They must authorize it on My Payslips before anything is deducted.' : ($unit ? 'Total '.$money($unit * max(1, (int) $issueQuantity)).'. They must authorize it on My Payslips before anything is deducted.' : 'Accounting hasn\'t set a price for this yet.')" />
                     @elseif ($picked)
                         <p class="text-xs text-gray-500 dark:text-gray-400">Company property: they confirm they received it and are accountable for it. Nothing is deducted.</p>
                     @endif
@@ -317,13 +338,71 @@
                         <option value="{{ $kind->value }}">{{ $kind->label() }}</option>
                     @endforeach
                 </x-ui.select>
-                <x-ui.input :label="$itemKind === 'uniform' ? 'Price (₱)' : 'Value (₱, optional)'" type="number" step="0.01" min="0" wire:model="itemPrice"
-                    :hint="$itemKind === 'uniform' ? 'Charged to the employee for each one.' : 'Shown as a guide if it\'s ever lost; the charge is always the actual loss.'" />
-                <x-ui.checkbox id="item-has-sizes" label="Comes in sizes (XS to 3XL)" wire:model="itemHasSizes" />
+                <fieldset class="space-y-2">
+                    <legend class="ui-label">Sizes</legend>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Tick the sizes it comes in, or add your own (shoes 38-45, waist 28-40, "Free size"). None: one size.</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        @foreach (\App\Models\EquipmentItem::STANDARD_SIZES as $size)
+                            <button type="button" wire:click="toggleSize('{{ $size }}')" aria-pressed="{{ in_array($size, $itemSizes, true) ? 'true' : 'false' }}"
+                                @class(['rounded-full border px-2.5 py-1 text-xs font-medium',
+                                    'border-blue-600 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20' => in_array($size, $itemSizes, true),
+                                    'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800' => ! in_array($size, $itemSizes, true)])>{{ $size }}</button>
+                        @endforeach
+                        <button type="button" wire:click="allStandardSizes" class="px-1.5 py-1 text-xs font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300">All</button>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <div class="min-w-0 flex-1">
+                            <x-ui.input wire:model="customSize" wire:keydown.enter.prevent="addCustomSize" placeholder="Custom: 42, or 38-45, or Free size" aria-label="Custom size" maxlength="60" />
+                        </div>
+                        <x-ui.button type="button" variant="secondary" size="sm" wire:click="addCustomSize" class="mt-0.5"><x-icon name="plus" class="h-4 w-4" /> Add</x-ui.button>
+                    </div>
+                    @error('customSize')<p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+                    @php $custom = array_values(array_diff($itemSizes, \App\Models\EquipmentItem::STANDARD_SIZES)); @endphp
+                    @if ($custom !== [])
+                        <div class="flex flex-wrap gap-1.5">
+                            @foreach ($custom as $size)
+                                <span wire:key="custom-{{ $size }}" class="inline-flex items-center gap-1 rounded-full border border-blue-600 bg-blue-50 py-1 pr-1 pl-2.5 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                                    {{ $size }}
+                                    <button type="button" wire:click="removeSize(@js($size))" class="rounded-full p-0.5 hover:bg-blue-100 dark:hover:bg-blue-500/20" aria-label="Remove size {{ $size }}"><x-icon name="x" class="h-3 w-3" /></button>
+                                </span>
+                            @endforeach
+                        </div>
+                    @endif
+                </fieldset>
                 <x-ui.checkbox id="item-active" label="Given out" description="Switch off an item you no longer issue. Past records keep it." wire:model="itemActive" />
+                @if ($itemKind === 'uniform')
+                    <x-ui.alert tone="blue" class="text-xs">Accounting sets the price (and any size that costs more). It can't be issued until then.</x-ui.alert>
+                @endif
             </form>
             <x-slot:footer>
                 <x-ui.button form="item-form">Save</x-ui.button>
+            </x-slot:footer>
+        </x-ui.modal>
+    @endif
+
+    {{-- Prices (Accounting) --}}
+    @if ($pricingItemId)
+        @php $pricing = $this->allItems->firstWhere('id', $pricingItemId); @endphp
+        <x-ui.modal :title="'Price: '.($pricing?->name ?? '')" close="cancelPricing" max-width="md">
+            <form id="price-form" wire:submit="savePrices" class="space-y-4">
+                <x-ui.input :label="$pricing?->hasSizes() ? 'Price (₱), for every size' : 'Price (₱)'" type="number" step="0.01" min="0" wire:model="basePrice"
+                    :hint="$pricing?->kind === \App\Enums\EquipmentKind::Uniform ? 'Charged to the employee for each one.' : 'Company property: a guide only. A loss is charged at the actual loss.'" />
+                @if ($pricing?->hasSizes())
+                    <fieldset class="space-y-2">
+                        <legend class="ui-label">A size that costs more or less (optional)</legend>
+                        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            {{-- By position: a size like "8.5" or "Free size" can't be a Livewire path. --}}
+                            @foreach ($pricing->sizeList() as $index => $size)
+                                <x-ui.input wire:key="price-{{ $index }}" :label="$size" type="number" step="0.01" min="0" wire:model="sizePrices.{{ $index }}" placeholder="Same" />
+                            @endforeach
+                        </div>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Leave blank to use the price above. What was already issued keeps the price it was issued at.</p>
+                    </fieldset>
+                @endif
+                @error('sizePrices')<p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
+            </form>
+            <x-slot:footer>
+                <x-ui.button form="price-form" wire:loading.attr="disabled" wire:target="savePrices">Save prices</x-ui.button>
             </x-slot:footer>
         </x-ui.modal>
     @endif

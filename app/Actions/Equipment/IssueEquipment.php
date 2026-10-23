@@ -59,9 +59,9 @@ final class IssueEquipment
                 throw ValidationException::withMessages(['issueItem' => 'That item is no longer given out.']);
             }
 
-            $size = $item->has_sizes ? $size : null;
+            $size = $item->hasSizes() ? $size : null;
 
-            if ($item->has_sizes && ! in_array($size, EquipmentItem::SIZES, true)) {
+            if ($item->hasSizes() && ! in_array($size, $item->sizeList(), true)) {
                 throw ValidationException::withMessages(['issueSize' => 'Choose the size.']);
             }
 
@@ -78,17 +78,18 @@ final class IssueEquipment
         }
 
         $charged = $item?->kind === EquipmentKind::Uniform;
-        $total = $charged ? round((float) $item->unit_price * $quantity, 2) : 0.0;
+        $unitPrice = $item?->priceFor($size);
+        $total = $charged ? round((float) $unitPrice * $quantity, 2) : 0.0;
 
         if ($charged && $total <= 0) {
-            throw ValidationException::withMessages(['issueItem' => 'Set this uniform\'s price on the item list first.']);
+            throw ValidationException::withMessages(['issueItem' => 'Accounting hasn\'t set this uniform\'s price'.($size ? " for size {$size}" : '').' yet.']);
         }
 
         if ($charged && ($installment === null || $installment <= 0 || $installment > $total)) {
             throw ValidationException::withMessages(['issueInstallment' => 'Per payslip: more than ₱0 and at most the total, ₱'.number_format($total, 2).'.']);
         }
 
-        return DB::transaction(function () use ($issuer, $employee, $item, $radio, $size, $quantity, $installment, $request, $charged, $total) {
+        return DB::transaction(function () use ($issuer, $employee, $item, $radio, $size, $quantity, $installment, $request, $charged, $total, $unitPrice) {
             $issue = $request ?? new EquipmentIssue;
             $label = $radio !== null ? "{$radio->brand} {$radio->model} radio (SN {$radio->serial_number})" : $item->name;
 
@@ -99,7 +100,8 @@ final class IssueEquipment
                 'label' => $label,
                 'size' => $size,
                 'quantity' => $quantity,
-                'unit_price' => $item?->unit_price,
+                // The price for that size, as it is today: a later price change doesn't touch it.
+                'unit_price' => $unitPrice === null ? null : number_format($unitPrice, 2, '.', ''),
                 'charged' => $charged,
                 'status' => EquipmentStatus::Issued,
                 'issued_by' => $issuer->id,

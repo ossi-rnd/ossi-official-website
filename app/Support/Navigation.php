@@ -18,6 +18,7 @@ use App\Models\CompanyDocument;
 use App\Models\Complaint;
 use App\Models\EmployeeProfile;
 use App\Models\EquipmentIssue;
+use App\Models\EquipmentItem;
 use App\Models\FinalPay;
 use App\Models\LeaveRequest;
 use App\Models\LoadRequest;
@@ -96,9 +97,13 @@ final class Navigation
                 $can(Ability::ManageTraining) ? self::item('Training', 'trainings', 'academic-cap', badge: TrainingRequest::query()->pending()->count()) : null,
                 // Badge: radios whose NTC permit expires within 30 days, or has.
                 $can(Ability::ManageRadios) ? self::item('Radios', 'radios', 'radio', badge: Radio::query()->permitDueBy(CarbonImmutable::today()->addDays(Radio::DUE_SOON_DAYS))->count()) : null,
-                // Issuers (Operations, Admin): badge = requests waiting + reports to decide. A head who
-                // doesn't issue (HR, the President or VP) sees it only while a report waits for them.
-                ($equipmentBadge = EquipmentDesk::canOpen($user) ? EquipmentIssue::query()->handledBy($user)->where('status', EquipmentStatus::Requested)->count() + EquipmentDesk::incidentsToDecide($user) : 0) > 0 || $can(Ability::IssueEquipment)
+                // Issuers (Operations, Admin): badge = requests waiting + reports to decide. Accounting:
+                // + uniforms waiting for a price. A head who doesn't issue (HR, the President or VP)
+                // sees it only while a report waits for them.
+                ($equipmentBadge = EquipmentDesk::canOpen($user)
+                    ? EquipmentIssue::query()->handledBy($user)->where('status', EquipmentStatus::Requested)->count() + EquipmentDesk::incidentsToDecide($user)
+                        + ($can(Ability::SetEquipmentPrices) ? EquipmentItem::needingPriceCount() : 0)
+                    : 0) > 0 || $can(Ability::IssueEquipment) || $can(Ability::SetEquipmentPrices)
                     ? self::item('Equipment', 'equipment', 'package', badge: $equipmentBadge)
                     : null,
                 // Badge: referrals waiting for HR to say hired or not.

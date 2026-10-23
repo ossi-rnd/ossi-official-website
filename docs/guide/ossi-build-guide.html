@@ -591,7 +591,7 @@ sequenceDiagram
     <div><b>One region</b><span>Satellite has <code>users.operations_region</code>. <code>visibleTo($viewer)</code> scopes lists; <code>canSeeProfile()</code> guards single records and Actions.</span></div>
     <div><b>Operations: guards only</b><span>The same rule also hides office staff from anyone without <code>view-office-staff</code>, which means Operation HQ (a Satellite sees only its region's guards anyway). Operations looks after guards, and office staff answer to the President or Vice President. So the Employees list and its filter, the Attendance Log, and a record opened by its link all follow one rule.</span></div>
   </div>
-  <details class="file" open><summary>app/Enums/Ability.php<span class="lines">193 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Enums/Ability.php<span class="lines">196 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Enums;
 
@@ -657,6 +657,7 @@ sequenceDiagram
     <span class="k">case</span> ManageReferrals = <span class="s">&#039;manage-referrals&#039;</span>;
     <span class="k">case</span> IssueEquipment = <span class="s">&#039;issue-equipment&#039;</span>;
     <span class="k">case</span> ManageEquipmentItems = <span class="s">&#039;manage-equipment-items&#039;</span>;
+    <span class="k">case</span> SetEquipmentPrices = <span class="s">&#039;set-equipment-prices&#039;</span>;
 
     <span class="c">/**
      * @return list&lt;Role&gt;
@@ -771,8 +772,10 @@ sequenceDiagram
             <span class="c">// guards it deploys (a Satellite: its region&#039;s), Admin to office staff</span>
             <span class="c">// (EquipmentIssue::canIssueTo says which person).</span>
             self::IssueEquipment =&gt; [Role::OperationsHq, Role::SatelliteOperations, Role::Admin, Role::SuperAdmin],
-            <span class="c">// The item list and prices: Admin keeps the stock list.</span>
+            <span class="c">// The item list and its sizes: Admin keeps the stock list...</span>
             self::ManageEquipmentItems =&gt; [Role::Admin, Role::SuperAdmin],
+            <span class="c">// ...and Accounting sets what each costs (the owner&#039;s choice, 2026-10-23).</span>
+            self::SetEquipmentPrices =&gt; [Role::Accounting, Role::SuperAdmin],
         };
     }
 
@@ -1118,7 +1121,7 @@ sequenceDiagram
         });
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Support/Navigation.php<span class="lines">169 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Support/Navigation.php<span class="lines">174 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Support;
 
@@ -1138,6 +1141,7 @@ sequenceDiagram
 <span class="k">use</span> App\Models\Complaint;
 <span class="k">use</span> App\Models\EmployeeProfile;
 <span class="k">use</span> App\Models\EquipmentIssue;
+<span class="k">use</span> App\Models\EquipmentItem;
 <span class="k">use</span> App\Models\FinalPay;
 <span class="k">use</span> App\Models\LeaveRequest;
 <span class="k">use</span> App\Models\LoadRequest;
@@ -1216,9 +1220,13 @@ sequenceDiagram
                 $<span class="f">can</span>(Ability::ManageTraining) ? self::<span class="f">item</span>(<span class="s">&#039;Training&#039;</span>, <span class="s">&#039;trainings&#039;</span>, <span class="s">&#039;academic-cap&#039;</span>, badge: TrainingRequest::<span class="f">query</span>()-&gt;<span class="f">pending</span>()-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
                 <span class="c">// Badge: radios whose NTC permit expires within 30 days, or has.</span>
                 $<span class="f">can</span>(Ability::ManageRadios) ? self::<span class="f">item</span>(<span class="s">&#039;Radios&#039;</span>, <span class="s">&#039;radios&#039;</span>, <span class="s">&#039;radio&#039;</span>, badge: Radio::<span class="f">query</span>()-&gt;<span class="f">permitDueBy</span>(CarbonImmutable::<span class="f">today</span>()-&gt;<span class="f">addDays</span>(Radio::DUE_SOON_DAYS))-&gt;<span class="f">count</span>()) : <span class="k">null</span>,
-                <span class="c">// Issuers (Operations, Admin): badge = requests waiting + reports to decide. A head who</span>
-                <span class="c">// doesn&#039;t issue (HR, the President or VP) sees it only while a report waits for them.</span>
-                ($equipmentBadge = EquipmentDesk::<span class="f">canOpen</span>($user) ? EquipmentIssue::<span class="f">query</span>()-&gt;<span class="f">handledBy</span>($user)-&gt;<span class="f">where</span>(<span class="s">&#039;status&#039;</span>, EquipmentStatus::Requested)-&gt;<span class="f">count</span>() + EquipmentDesk::<span class="f">incidentsToDecide</span>($user) : <span class="n">0</span>) &gt; <span class="n">0</span> || $<span class="f">can</span>(Ability::IssueEquipment)
+                <span class="c">// Issuers (Operations, Admin): badge = requests waiting + reports to decide. Accounting:</span>
+                <span class="c">// + uniforms waiting for a price. A head who doesn&#039;t issue (HR, the President or VP)</span>
+                <span class="c">// sees it only while a report waits for them.</span>
+                ($equipmentBadge = EquipmentDesk::<span class="f">canOpen</span>($user)
+                    ? EquipmentIssue::<span class="f">query</span>()-&gt;<span class="f">handledBy</span>($user)-&gt;<span class="f">where</span>(<span class="s">&#039;status&#039;</span>, EquipmentStatus::Requested)-&gt;<span class="f">count</span>() + EquipmentDesk::<span class="f">incidentsToDecide</span>($user)
+                        + ($<span class="f">can</span>(Ability::SetEquipmentPrices) ? EquipmentItem::<span class="f">needingPriceCount</span>() : <span class="n">0</span>)
+                    : <span class="n">0</span>) &gt; <span class="n">0</span> || $<span class="f">can</span>(Ability::IssueEquipment) || $<span class="f">can</span>(Ability::SetEquipmentPrices)
                     ? self::<span class="f">item</span>(<span class="s">&#039;Equipment&#039;</span>, <span class="s">&#039;equipment&#039;</span>, <span class="s">&#039;package&#039;</span>, badge: $equipmentBadge)
                     : <span class="k">null</span>,
                 <span class="c">// Badge: referrals waiting for HR to say hired or not.</span>
@@ -20546,7 +20554,7 @@ flowchart LR
 <!-- ============================== 38 ============================== -->
 <section class="chapter" id="equipment">
   <div class="chapter-head"><span class="no">38</span><h2>Equipment and accountability</h2></div>
-  <p class="lead">Uniforms, radios and gear: who issues them, what the employee signs, and when the company may charge for them. Operations issues to the guards it deploys (a Satellite: its region's), Admin to office staff (<code>EquipmentIssue::canIssueTo</code>). Admin keeps the item list and prices. Employees ask for items on <b>My Equipment</b>.</p>
+  <p class="lead">Uniforms, radios and gear: who issues them, what the employee signs, and when the company may charge for them. Operations issues to the guards it deploys (a Satellite: its region's), Admin to office staff (<code>EquipmentIssue::canIssueTo</code>). Admin keeps the items and each one's sizes (standard XS to 5XL, or custom like <code>38-45</code> or <code>Free size</code>); <b>Accounting sets the prices</b>, with an optional price per size (<code>EquipmentItem::priceFor</code>). A uniform can't be issued until every size has a price, and what was issued keeps the price it was issued at. Employees ask for items on <b>My Equipment</b>.</p>
   <div class="why">
     <div><b>Two kinds of item, two kinds of paper</b><span>A <b>uniform</b> is charged (the owner's rule): its price becomes an <code>EmployeeDeduction</code> waiting for the employee's <b>authority to deduct</b> on My Payslips (Labor Code Art. 113). Until they tap "I authorize this", <code>scopeTakenFromPay</code> skips it. Anything else is <b>company property</b>. The employee confirms they received it and are accountable for it, in a sentence kept word for word in English or Filipino (<code>AcknowledgeEquipment</code>). Nothing is deducted for it.</span></div>
     <div><b>Charged only after being heard</b><span>Damage or loss follows DOLE's conditions for deducting a loss, each one enforced in code. The employee is told and gets 5 days to explain (<code>ReportEquipmentIncident</code>, <code>ExplainEquipmentIncident</code>). Their <b>head</b> (<code>Heads</code>) decides only once they explained or the days passed (<code>readyToDecide</code>). The decision states why, the amount is the actual loss with how it was arrived at, and each payslip takes at most 20% of a week's wages (daily rate × 6 × 20%, <code>maxInstallmentFor</code>). The deduction's basis is <code>LossOrDamage</code>, which Accounting can't pick by hand.</span></div>
@@ -20763,7 +20771,7 @@ flowchart LR
         <span class="k">return</span> $this-&gt;<span class="f">hasMany</span>(EquipmentIncident::<span class="k">class</span>)-&gt;<span class="f">orderBy</span>(<span class="s">&#039;id&#039;</span>);
     }
 }</code></pre></details>
-  <details class="file" open><summary>app/Actions/Equipment/IssueEquipment.php<span class="lines">137 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Actions/Equipment/IssueEquipment.php<span class="lines">139 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\Equipment;
 
@@ -20824,9 +20832,9 @@ flowchart LR
                 <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>([<span class="s">&#039;issueItem&#039;</span> =&gt; <span class="s">&#039;That item is no longer given out.&#039;</span>]);
             }
 
-            $size = $item-&gt;has_sizes ? $size : <span class="k">null</span>;
+            $size = $item-&gt;<span class="f">hasSizes</span>() ? $size : <span class="k">null</span>;
 
-            <span class="k">if</span> ($item-&gt;has_sizes &amp;&amp; ! <span class="f">in_array</span>($size, EquipmentItem::SIZES, <span class="k">true</span>)) {
+            <span class="k">if</span> ($item-&gt;<span class="f">hasSizes</span>() &amp;&amp; ! <span class="f">in_array</span>($size, $item-&gt;<span class="f">sizeList</span>(), <span class="k">true</span>)) {
                 <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>([<span class="s">&#039;issueSize&#039;</span> =&gt; <span class="s">&#039;Choose the size.&#039;</span>]);
             }
 
@@ -20843,17 +20851,18 @@ flowchart LR
         }
 
         $charged = $item?-&gt;kind === EquipmentKind::Uniform;
-        $total = $charged ? <span class="f">round</span>((float) $item-&gt;unit_price * $quantity, <span class="n">2</span>) : <span class="n">0.0</span>;
+        $unitPrice = $item?-&gt;<span class="f">priceFor</span>($size);
+        $total = $charged ? <span class="f">round</span>((float) $unitPrice * $quantity, <span class="n">2</span>) : <span class="n">0.0</span>;
 
         <span class="k">if</span> ($charged &amp;&amp; $total &lt;= <span class="n">0</span>) {
-            <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>([<span class="s">&#039;issueItem&#039;</span> =&gt; <span class="s">&#039;Set this uniform\&#039;s price on the item list first.&#039;</span>]);
+            <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>([<span class="s">&#039;issueItem&#039;</span> =&gt; <span class="s">&#039;Accounting hasn\&#039;t set this uniform\&#039;s price&#039;</span>.($size ? <span class="s">&quot; for size {$size}&quot;</span> : <span class="s">&#039;&#039;</span>).<span class="s">&#039; yet.&#039;</span>]);
         }
 
         <span class="k">if</span> ($charged &amp;&amp; ($installment === <span class="k">null</span> || $installment &lt;= <span class="n">0</span> || $installment &gt; $total)) {
             <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>([<span class="s">&#039;issueInstallment&#039;</span> =&gt; <span class="s">&#039;Per payslip: more than ₱0 and at most the total, ₱&#039;</span>.<span class="f">number_format</span>($total, <span class="n">2</span>).<span class="s">&#039;.&#039;</span>]);
         }
 
-        <span class="k">return</span> DB::<span class="f">transaction</span>(<span class="k">function</span> () <span class="k">use</span> ($issuer, $employee, $item, $radio, $size, $quantity, $installment, $request, $charged, $total) {
+        <span class="k">return</span> DB::<span class="f">transaction</span>(<span class="k">function</span> () <span class="k">use</span> ($issuer, $employee, $item, $radio, $size, $quantity, $installment, $request, $charged, $total, $unitPrice) {
             $issue = $request ?? <span class="k">new</span> EquipmentIssue;
             $label = $radio !== <span class="k">null</span> ? <span class="s">&quot;{$radio-&gt;brand} {$radio-&gt;model} radio (SN {$radio-&gt;serial_number})&quot;</span> : $item-&gt;name;
 
@@ -20864,7 +20873,8 @@ flowchart LR
                 <span class="s">&#039;label&#039;</span> =&gt; $label,
                 <span class="s">&#039;size&#039;</span> =&gt; $size,
                 <span class="s">&#039;quantity&#039;</span> =&gt; $quantity,
-                <span class="s">&#039;unit_price&#039;</span> =&gt; $item?-&gt;unit_price,
+                <span class="c">// The price for that size, as it is today: a later price change doesn&#039;t touch it.</span>
+                <span class="s">&#039;unit_price&#039;</span> =&gt; $unitPrice === <span class="k">null</span> ? <span class="k">null</span> : <span class="f">number_format</span>($unitPrice, <span class="n">2</span>, <span class="s">&#039;.&#039;</span>, <span class="s">&#039;&#039;</span>),
                 <span class="s">&#039;charged&#039;</span> =&gt; $charged,
                 <span class="s">&#039;status&#039;</span> =&gt; EquipmentStatus::Issued,
                 <span class="s">&#039;issued_by&#039;</span> =&gt; $issuer-&gt;id,
@@ -21172,7 +21182,7 @@ flowchart LR
         <span class="k">return</span> $this-&gt;<span class="f">belongsTo</span>(User::<span class="k">class</span>, <span class="s">&#039;decided_by&#039;</span>);
     }
 }</code></pre></details>
-  <div class="try"><b>Try it</b><ol><li>As <code>admin@example.test</code>: Equipment → Items and prices → add "Uniform polo" (Uniform, ₱450, sizes) and "Flashlight" (Company property).</li><li>As <code>opshq@example.test</code>: Issue equipment → a guard → the polo, size L, ₱150 per payslip. As that guard: My Equipment shows the authority to deduct and "I received it".</li><li>Back as Operation HQ: report a flashlight damaged. The Decide button waits until the guard explains or 5 days pass.</li></ol></div>
+  <div class="try"><b>Try it</b><ol><li>As <code>admin@example.test</code>: Equipment → Items and prices → add "Uniform polo" (Uniform, tick All sizes) and "Flashlight" (Company property). Then as <code>accounting@example.test</code>: Set price → ₱450, and ₱520 for 3XL.</li><li>As <code>opshq@example.test</code>: Issue equipment → a guard → the polo, size L, ₱150 per payslip. As that guard: My Equipment shows the authority to deduct and "I received it".</li><li>Back as Operation HQ: report a flashlight damaged. The Decide button waits until the guard explains or 5 days pass.</li></ol></div>
 </section>
 
 <section class="chapter" id="lessons">
@@ -21205,7 +21215,7 @@ flowchart LR
     <tr><td>Two staff could claim the same relief's fare at once.</td><td>"Only one" needs a row lock around the check, not just a check.</td></tr>
     <tr><td>Twice a button vanished on hover in dark mode: "Choose file", then Clock In. It had <code>dark:bg-white</code> but only the light <code>hover:bg-gray-800</code>, under dark text.</td><td>Every hover needs its dark twin: if a class sets <code>dark:bg-…</code>, also set <code>dark:hover:bg-…</code>. Better, use <code>x-ui.button</code>, whose variants already do. Check the hover in dark mode, not just the resting state.</td></tr>
     <tr><td>A third time: the "Common hours" chips on the shift picker turned white on hover in dark mode. Their classes sat in an Alpine <code>x-bind:class</code> string, and the rule "every dark:bg needs a dark:hover" was written down but no test checked it.</td><td>A rule that only lives in a document gets broken. <code>DarkModeColorsTest</code> now fails on any light hover background (<code>hover:bg-white</code>, <code>-50</code>, <code>-100</code>, <code>-200</code>) without a <code>dark:hover:bg-…</code>, in <code>class="…"</code> and in class-only strings. It found 12 more on its first run.</td></tr>
-    <tr><td>The Equipment menu reads new tables. That code was saved several minutes before the pilot was migrated, so the pilot's pages could fail in between: the Radios slip again.</td><td>With a new table, migrate the pilot <b>first</b> (backup, then <code>pilot-artisan.ps1 migrate --force</code>), then save code that reads it. Or write the migration and code together, and migrate before the first test run.</td></tr>
+    <tr><td>The Equipment menu reads new tables. That code was saved several minutes before the pilot was migrated, so the pilot's pages could fail in between: the Radios slip again.</td><td>With a new table, migrate the pilot <b>first</b> (backup, then <code>pilot-artisan.ps1 migrate --force</code>), then save code that reads it. To replace a column (equipment's <code>has_sizes</code> → <code>sizes</code>), use three steps: add the new column and migrate both databases, switch the code, then drop the old column. The live code never meets a database it doesn't fit.</td></tr>
     <tr><td>Every error page said "Go to the dashboard", but guards have no dashboard and a visitor may be signed out.</td><td>A button's label must be true for everyone who sees it. Point it at a route that decides (<code>/home</code>: sign-in, My Attendance or the Dashboard) and name it neutrally. An error page can't reliably check who's signed in: a 404 often never starts the session.</td></tr>
     <tr><td>The 500 and 503 pages were missing, so a server error or an update showed Laravel's default page; the others were bare text with a blue number.</td><td>List every status a user can hit (401, 403, 404, 419, 429, 500, 503) and give each the app's look, a way forward and a reason, using no session or database. A 500 page shows the time for IT, never the error.</td></tr>
     <tr><td>The dashboard looked fine for HR (3 numbers) but squeezed for the Super Admin (11 in one row, every label "Peop…", "None yet" wrapping onto two lines).</td><td>Check a layout with the <i>most</i> data a role can have, not the usual. Wrap past a column count instead of shrinking forever, and give text values their own size so a row still lines up.</td></tr>

@@ -4,6 +4,17 @@ What changed, why, and where to read more. Newest first. Each entry was built th
 
 ## 2026-10-23
 
+**Equipment: sizes per item, and Accounting sets the prices**
+- **Sizes:** each item has its own sizes. Admin ticks standard ones (XS to 5XL, or All) or adds custom ones: `42`, `W32/L30`, `Free size`, several separated by commas, or a range like `38-45`. This replaces the "Comes in sizes (XS to 3XL)" tick; items that had it keep XS to 3XL.
+- **Prices are Accounting's** (new ability `set-equipment-prices`; the owner's choice): the item's price, plus an optional price for any size that costs more. Admin sees prices but can't change them.
+- **A uniform needs a price for every size before it can be issued.** Accounting gets a bell when one is missing, and their Equipment badge counts them.
+- **Issued items keep their price:** a later price change applies only to new issues.
+- **Database changes, done in the safe order this time:**
+  1. added `sizes` (additive), backed up, and migrated dev and the pilot before any code read it;
+  2. switched the code;
+  3. dropped `has_sizes`, again after backups and on both databases.
+- **Tests:** 3 new tests, 981 in all.
+
 **Equipment: uniforms, radios and gear, with authority to deduct and accountability** ([34](features/34-equipment.md))
 - **Who issues** (the owner's choice): Operations issues to the guards it deploys (a Satellite: its region's); Admin issues to office staff and keeps the item list and prices. New abilities: `issue-equipment` and `manage-equipment-items`.
 - **Every uniform is charged:** its price becomes a deduction waiting for the employee's authority to deduct on My Payslips (Art. 113). Nothing is taken until they authorize it.

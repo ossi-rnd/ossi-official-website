@@ -9,6 +9,7 @@ use App\Actions\Equipment\ReportEquipmentIncident;
 use App\Actions\Equipment\RequestEquipment;
 use App\Actions\Equipment\ReturnEquipment;
 use App\Actions\Equipment\SaveEquipmentItem;
+use App\Actions\Equipment\SetEquipmentItemPrices;
 use App\Actions\Payroll\AnswerDeductionAuthorization;
 use App\Enums\DeductionAuthorizationBasis;
 use App\Enums\DeductionType;
@@ -26,6 +27,7 @@ use App\Models\EmployeeDeduction;
 use App\Models\EmployeeRate;
 use App\Models\EquipmentIncident;
 use App\Models\EquipmentIssue;
+use App\Models\EquipmentItem;
 use App\Models\Radio;
 use App\Models\User;
 use App\Notifications\UpdateNotice;
@@ -59,8 +61,11 @@ beforeEach(function () {
     $this->clerk->forceFill(['name' => 'Carla Clerk'])->save();
     $this->president = staff(Role::President);
 
-    $this->polo = app(SaveEquipmentItem::class)->handle(null, 'Uniform polo', EquipmentKind::Uniform, 450.0, true, true, $this->admin);
-    $this->flashlight = app(SaveEquipmentItem::class)->handle(null, 'Flashlight', EquipmentKind::Gear, 800.0, false, true, $this->admin);
+    // Admin keeps the items and sizes; Accounting sets the prices.
+    $this->polo = app(SaveEquipmentItem::class)->handle(null, 'Uniform polo', EquipmentKind::Uniform, ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'], true, $this->admin);
+    app(SetEquipmentItemPrices::class)->handle($this->polo, 450.0, [], $this->clerk);
+    $this->flashlight = app(SaveEquipmentItem::class)->handle(null, 'Flashlight', EquipmentKind::Gear, [], true, $this->admin);
+    app(SetEquipmentItemPrices::class)->handle($this->flashlight, 800.0, [], $this->clerk);
     $this->radio = new Radio;
     $this->radio->forceFill(['brand' => 'Motorola', 'model' => 'XiR P3688', 'serial_number' => '123ABC', 'status' => RadioStatus::Spare])->save();
 });
@@ -136,11 +141,61 @@ it('charges every uniform, but takes nothing until the employee authorizes the d
     expect(fn () => app(ReturnEquipment::class)->handle($this->opsHq, $issue, null))->toThrow(ValidationException::class);
 });
 
-it('needs a price for a uniform on the item list', function () {
-    expect(fn () => app(SaveEquipmentItem::class)->handle(null, 'Cap', EquipmentKind::Uniform, null, false, true, $this->admin))
-        ->toThrow(ValidationException::class, 'enter its price')
-        ->and(fn () => app(SaveEquipmentItem::class)->handle(null, 'Cap', EquipmentKind::Uniform, 150.0, false, true, $this->opsHq))
-        ->toThrow(AuthorizationException::class);
+it('has Admin keep items and sizes, and Accounting set prices (Accounting is told when one is missing)', function () {
+    expect(fn () => app(SaveEquipmentItem::class)->handle(null, 'Cap', EquipmentKind::Uniform, [], true, $this->opsHq))->toThrow(AuthorizationException::class)
+        ->and(fn () => app(SetEquipmentItemPrices::class)->handle($this->polo, 999.0, [], $this->admin))->toThrow(AuthorizationException::class);
+
+    $boots = app(SaveEquipmentItem::class)->handle(null, 'Combat boots', EquipmentKind::Uniform, ['39', '40', '41', '42', 'free size'], true, $this->admin);
+    expect($boots->sizeList())->toBe(['39', '40', '41', '42', 'free size'])
+        ->and($boots->needsPrice())->toBeTrue()
+        ->and(EquipmentItem::needingPriceCount())->toBe(1);
+    Notification::assertSentTo($this->clerk, UpdateNotice::class, fn (UpdateNotice $n) => $n->title === 'Uniform needs a price: Combat boots');
+
+    // Can't be issued until it has a price.
+    expect(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots, null, '41', 1, 100.0))
+        ->toThrow(ValidationException::class, 'hasn\'t set this uniform\'s price for size 41');
+
+    // One price, and a size that costs more.
+    app(SetEquipmentItemPrices::class)->handle($boots, 1500.0, ['42' => 1650.0], $this->clerk);
+    expect($boots->fresh()?->priceFor('41'))->toBe(1500.0)
+        ->and($boots->fresh()?->priceFor('42'))->toBe(1650.0)
+        ->and($boots->fresh()?->priceLabel())->toBe('₱1,500.00 to ₱1,650.00')
+        ->and(EquipmentItem::needingPriceCount())->toBe(0);
+
+    $issue = app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots->fresh(), null, '42', 1, 550.0);
+    expect((float) $issue->unit_price)->toBe(1650.0)->and((float) $issue->deduction?->original_amount)->toBe(1650.0);
+
+    // A later price change doesn't touch what was issued; a size Admin keeps keeps its price.
+    app(SetEquipmentItemPrices::class)->handle($boots->fresh(), 1800.0, ['42' => 2000.0], $this->clerk);
+    app(SaveEquipmentItem::class)->handle($boots->fresh(), 'Combat boots', EquipmentKind::Uniform, ['42', '43'], true, $this->admin);
+    expect((float) $issue->fresh()?->unit_price)->toBe(1650.0)
+        ->and($boots->fresh()?->priceFor('42'))->toBe(2000.0)
+        ->and($boots->fresh()?->priceFor('43'))->toBe(1800.0)
+        ->and(fn () => app(IssueEquipment::class)->handle($this->opsHq, $this->guard, $boots->fresh(), null, '39', 1, 100.0))->toThrow(ValidationException::class, 'Choose the size');
+});
+
+it('lets Admin tick standard sizes and add custom ones, ranges included', function () {
+    Livewire::actingAs($this->admin)->test(Equipment::class)
+        ->call('startItem')->set('itemName', 'Duty trousers')->set('itemKind', 'uniform')
+        ->call('toggleSize', 'M')->call('toggleSize', 'L')->call('toggleSize', 'M')
+        ->set('customSize', '28-32, W34/L32')->call('addCustomSize')->assertHasNoErrors()
+        ->assertSet('itemSizes', ['L', '28', '29', '30', '31', '32', 'W34/L32'])
+        ->set('customSize', 'not a valid size!')->call('addCustomSize')->assertHasErrors('customSize')
+        ->call('removeSize', '29')
+        ->call('saveItem')->assertHasNoErrors();
+
+    expect(EquipmentItem::query()->where('name', 'Duty trousers')->sole()->sizeList())->toBe(['L', '28', '30', '31', '32', 'W34/L32']);
+});
+
+it('shows Accounting only the item list, where they set prices per size', function () {
+    $this->actingAs($this->clerk)->get(route('equipment'))->assertOk()->assertSee('Items and prices')->assertSee('Set price')->assertDontSee('Issue equipment');
+
+    Livewire::actingAs($this->clerk)->test(Equipment::class)
+        ->call('startPricing', $this->polo->id)->set('basePrice', '480')->set('sizePrices.6', '520')->call('savePrices')->assertHasNoErrors();
+    expect($this->polo->fresh()?->priceFor('M'))->toBe(480.0)->and($this->polo->fresh()?->priceFor('3XL'))->toBe(520.0);
+
+    Livewire::actingAs($this->admin)->test(Equipment::class)->assertSee('Items and prices')->assertDontSee('Set price')
+        ->call('startPricing', $this->polo->id)->assertForbidden();
 });
 
 it('sends a guard\'s request to Operations and an office staffer\'s to Admin, then issues or turns it down', function () {
@@ -240,9 +295,9 @@ it('works from the pages: Operations issues, the guard confirms and requests on 
     Livewire::actingAs($this->opsHq)->test(Equipment::class)->assertSee('Gary Guard')->assertSet('show', '');
 });
 
-it('opens the desk only for issuers and heads, and the item list only for Admin', function () {
+it('opens the desk only for issuers, heads and Accounting (prices), and the item list only for Admin and Accounting', function () {
     $this->actingAs($this->guard)->get(route('equipment'))->assertForbidden();
-    $this->actingAs($this->clerk)->get(route('equipment'))->assertForbidden();
+    $this->actingAs(staff(Role::Developer))->get(route('equipment'))->assertForbidden();
     $this->actingAs($this->opsHq)->get(route('equipment'))->assertOk()->assertDontSee('Items and prices');
     $this->actingAs($this->admin)->get(route('equipment'))->assertOk()->assertSee('Items and prices');
     $this->actingAs($this->hr)->get(route('equipment'))->assertOk();

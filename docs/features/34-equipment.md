@@ -9,13 +9,26 @@ Who issues what, what the employee signs, and when the company may charge for it
 |---|---|---|
 | Issues, takes back, reports damage or loss (`issue-equipment`, `EquipmentIssue::canIssueTo`) | Operation HQ, or the Satellite Operation of their region | Admin |
 | Decides a damage or loss report (`EquipmentIncident::canDecide`) | Their head (`App\Support\Heads`): Operation HQ or their region's Satellite | Their head: HR for Admin and others; Operation HQ for a Satellite; the President or VP for HR, Operation HQ and Accounting |
-| Keeps the item list and prices (`manage-equipment-items`) | Admin | Admin |
+| Keeps the item list and each item's sizes (`manage-equipment-items`) | Admin | Admin |
+| Sets the prices (`set-equipment-prices`) | Accounting | Accounting |
 
 The Super Admin may do any of these as backup. Nobody issues to themselves.
 
+## Items, sizes and prices
+
+- **Sizes (Admin):** each item has its own list. Tick standard sizes (XS to 5XL, or **All**), or add custom ones:
+  - one at a time: `42`, `W32/L30`, `Free size`;
+  - several separated by commas;
+  - a number range: `38-45` adds 38, 39 … 45.
+  
+  Up to 30 sizes, each up to 10 letters or numbers. No sizes means one size. Standard sizes are stored in upper case, and duplicates are dropped (`SaveEquipmentItem::cleanSizes`).
+- **Prices (Accounting, the owner's choice):** the item's price, plus an optional price for any size that costs more or less (a 3XL, size 46 boots). `EquipmentItem::priceFor(size)` uses the size's own price, else the item's. Admin sees the prices but can't change them.
+- **A uniform can't be issued until every size it comes in has a price.** Accounting is told by bell when Admin saves one that's missing a price, and their **Equipment** badge counts them (`needingPriceCount`).
+- **An item keeps the price it was issued at.** A later change applies only to new issues, and a size Admin keeps keeps its own price.
+
 ## Two kinds of item
 
-- **Uniform: every uniform is charged.** On issue, its price (× quantity) becomes a deduction (type Uniform) with that balance, **waiting for the employee's authority to deduct** on My Payslips (Labor Code Art. 113). No payslip takes it until they authorize it. If they decline, the issuer sees "Deduction declined" and HR handles it in person. An unpaid balance shows on final pay like a loan.
+- **Uniform: every uniform is charged.** On issue, its price for that size (× quantity) becomes a deduction (type Uniform) with that balance, **waiting for the employee's authority to deduct** on My Payslips (Labor Code Art. 113). No payslip takes it until they authorize it. If they decline, the issuer sees "Deduction declined" and HR handles it in person. An unpaid balance shows on final pay like a loan.
   - **The owner should confirm with DOLE or counsel** that charging guards for required uniforms is allowed. It's one switch: the item's kind.
 - **Company property** (radios, flashlights, raincoats…): the employee confirms on My Equipment that they received it and are accountable for it. Nothing is deducted. It's returned when asked or when they leave; the resignation clearance lists anything not yet returned.
 
@@ -40,7 +53,7 @@ DOLE's conditions for deducting a loss or damage, each one enforced:
 
 ## Screens
 
-- **Equipment** (Management): Requests · With people · Damage & loss · History, and **Items and prices** for Admin. Heads who don't issue (HR, the President or VP) see only Damage & loss, and the menu item only while a report waits for them. Badge: requests + reports ready to decide.
+- **Equipment** (Management): Requests · With people · Damage & loss · History, and **Items and prices** (Admin: items and sizes; Accounting: **Set price**). Accounting sees only Items and prices. Heads who don't issue (HR, the President or VP) see only Damage & loss, and the menu item only while a report waits for them. Badge: requests + reports ready to decide.
 - **My Equipment** (Personal): what I hold and confirm, my requests, reports to explain, and any authority to deduct waiting. Badge: items to confirm + reports to explain.
 
-Every step is audited (`equipment.*`, `equipment_item.*`). Data: `equipment_items`, `equipment_issues`, `equipment_incidents` (migration `2026_10_23_100001`). Tests: `tests/Feature/Equipment/EquipmentTest.php`.
+Every step is audited (`equipment.*`, `equipment_item.*`). Data: `equipment_items` (with `sizes`, a list of `{size, price}`), `equipment_issues`, `equipment_incidents` (migrations `2026_10_23_100001` to `100003`). Tests: `tests/Feature/Equipment/EquipmentTest.php`.

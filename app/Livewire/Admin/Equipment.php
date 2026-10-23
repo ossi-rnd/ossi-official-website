@@ -8,6 +8,7 @@ use App\Actions\Equipment\RejectEquipmentRequest;
 use App\Actions\Equipment\ReportEquipmentIncident;
 use App\Actions\Equipment\ReturnEquipment;
 use App\Actions\Equipment\SaveEquipmentItem;
+use App\Actions\Equipment\SetEquipmentItemPrices;
 use App\Enums\Ability;
 use App\Enums\EquipmentIncidentKind;
 use App\Enums\EquipmentKind;
@@ -32,7 +33,8 @@ use Livewire\Component;
 /**
  * The equipment desk. Issuers (Operations for guards, Admin for office staff): requests, what's
  * out, returns, and reporting damage or loss. Heads (EquipmentIncident::canDecide) decide those
- * reports here too, after the employee was heard. Admin keeps the item list and prices.
+ * reports here too, after the employee was heard. Admin keeps the item list and sizes;
+ * Accounting sets the prices (and sees only that list).
  *
  * @property-read Collection<int, EquipmentIssue> $requests
  * @property-read Collection<int, EquipmentIssue> $out
@@ -109,15 +111,30 @@ class Equipment extends Component
 
     public string $itemKind = 'gear';
 
-    public string $itemPrice = '';
+    /** @var list<string> the sizes ticked or added, in order */
+    public array $itemSizes = [];
 
-    public bool $itemHasSizes = false;
+    public string $customSize = '';
 
     public bool $itemActive = true;
 
+    // Prices (Accounting)
+    public ?int $pricingItemId = null;
+
+    public string $basePrice = '';
+
+    /** @var list<string> each size's own price, in the item's size order ('' = the item's) */
+    public array $sizePrices = [];
+
     public static function canOpen(User $user): bool
     {
-        return $user->can(Ability::IssueEquipment->value) || Heads::headsOfficeStaff($user);
+        return $user->can(Ability::IssueEquipment->value) || Heads::headsOfficeStaff($user) || $user->can(Ability::SetEquipmentPrices->value);
+    }
+
+    /** Issues, or decides damage and loss: sees the desk. Accounting alone sees only the item list. */
+    public function seesDesk(): bool
+    {
+        return $this->issues() || Heads::headsOfficeStaff($this->currentUser());
     }
 
     public function mount(): void
@@ -303,7 +320,7 @@ class Equipment extends Component
     {
         abort_unless($this->currentUser()->can(Ability::ManageEquipmentItems->value), 403);
 
-        $this->reset(['editingItemId', 'itemName', 'itemKind', 'itemPrice', 'itemHasSizes', 'itemActive']);
+        $this->cancelItem();
         $this->resetErrorBag();
 
         if ($id !== null) {
@@ -311,12 +328,50 @@ class Equipment extends Component
             $this->editingItemId = $item->id;
             $this->itemName = $item->name;
             $this->itemKind = $item->kind->value;
-            $this->itemPrice = (string) $item->unit_price;
-            $this->itemHasSizes = $item->has_sizes;
+            $this->itemSizes = $item->sizeList();
             $this->itemActive = $item->is_active;
         }
 
         $this->itemFormOpen = true;
+    }
+
+    /** Ticks or unticks a standard size. */
+    public function toggleSize(string $size): void
+    {
+        $this->itemSizes = in_array($size, $this->itemSizes, true)
+            ? array_values(array_diff($this->itemSizes, [$size]))
+            : SaveEquipmentItem::cleanSizes([...$this->itemSizes, $size]);
+    }
+
+    /** Ticks every standard size at once. */
+    public function allStandardSizes(): void
+    {
+        $this->itemSizes = SaveEquipmentItem::cleanSizes([...$this->itemSizes, ...EquipmentItem::STANDARD_SIZES]);
+    }
+
+    /** Adds custom sizes: one, or several separated by commas ("38, 39, 40"), or a range ("38-45"). */
+    public function addCustomSize(): void
+    {
+        $this->resetErrorBag('customSize');
+        $entries = [];
+
+        foreach (explode(',', $this->customSize) as $part) {
+            $part = trim($part);
+
+            if (preg_match('/^(\d{1,3})\s*(?:-|to)\s*(\d{1,3})$/i', $part, $range) === 1 && (int) $range[2] > (int) $range[1] && (int) $range[2] - (int) $range[1] < EquipmentItem::MAX_SIZES) {
+                array_push($entries, ...array_map('strval', range((int) $range[1], (int) $range[2])));
+            } elseif ($part !== '') {
+                $entries[] = $part;
+            }
+        }
+
+        $this->itemSizes = SaveEquipmentItem::cleanSizes([...$this->itemSizes, ...$entries]);
+        $this->customSize = '';
+    }
+
+    public function removeSize(string $size): void
+    {
+        $this->itemSizes = array_values(array_diff($this->itemSizes, [$size]));
     }
 
     public function saveItem(SaveEquipmentItem $save): void
@@ -324,21 +379,57 @@ class Equipment extends Component
         $this->validate([
             'itemName' => ['required', 'string', 'max:80'],
             'itemKind' => ['required', Rule::enum(EquipmentKind::class)],
-            'itemPrice' => ['nullable', 'numeric', 'min:0', 'max:999999'],
-        ], [], ['itemName' => 'name', 'itemPrice' => 'price']);
+        ], [], ['itemName' => 'name']);
 
         $save->handle($this->editingItemId !== null ? EquipmentItem::query()->findOrFail($this->editingItemId) : null,
-            $this->itemName, EquipmentKind::from($this->itemKind), filled($this->itemPrice) ? (float) $this->itemPrice : null,
-            $this->itemHasSizes, $this->itemActive, $this->currentUser());
+            $this->itemName, EquipmentKind::from($this->itemKind), $this->itemSizes, $this->itemActive, $this->currentUser());
 
-        $this->reset(['itemFormOpen', 'editingItemId', 'itemName', 'itemKind', 'itemPrice', 'itemHasSizes', 'itemActive']);
+        $this->cancelItem();
         unset($this->allItems, $this->activeItems);
-        $this->dispatch('notify', message: 'Item saved.');
+        $this->dispatch('notify', message: 'Item saved.'.(EquipmentKind::from($this->itemKind) === EquipmentKind::Uniform ? ' Accounting sets its price.' : ''));
     }
 
     public function cancelItem(): void
     {
-        $this->reset(['itemFormOpen', 'editingItemId', 'itemName', 'itemKind', 'itemPrice', 'itemHasSizes', 'itemActive']);
+        $this->reset(['itemFormOpen', 'editingItemId', 'itemName', 'itemKind', 'itemSizes', 'customSize', 'itemActive']);
+    }
+
+    // ---- Prices (Accounting) ----
+
+    public function startPricing(int $id): void
+    {
+        abort_unless($this->currentUser()->can(Ability::SetEquipmentPrices->value), 403);
+
+        $item = EquipmentItem::query()->findOrFail($id);
+        $this->pricingItemId = $item->id;
+        $this->basePrice = $item->unit_price === null ? '' : (string) $item->unit_price;
+        $this->sizePrices = array_map(fn (array $entry) => $entry['price'] === null ? '' : number_format((float) $entry['price'], 2, '.', ''), $item->sizes ?? []);
+        $this->resetErrorBag();
+    }
+
+    public function savePrices(SetEquipmentItemPrices $setPrices): void
+    {
+        $this->validate([
+            'basePrice' => ['nullable', 'numeric', 'min:0', 'max:'.SetEquipmentItemPrices::MAX_PRICE],
+            'sizePrices.*' => ['nullable', 'numeric', 'min:0', 'max:'.SetEquipmentItemPrices::MAX_PRICE],
+        ], [], ['basePrice' => 'price', 'sizePrices.*' => 'size price']);
+
+        $item = EquipmentItem::query()->findOrFail((int) $this->pricingItemId);
+        $bySize = [];
+        foreach ($item->sizeList() as $index => $size) {
+            $bySize[$size] = filled($this->sizePrices[$index] ?? '') ? (float) $this->sizePrices[$index] : null;
+        }
+
+        $setPrices->handle($item, filled($this->basePrice) ? (float) $this->basePrice : null, $bySize, $this->currentUser());
+
+        $this->reset(['pricingItemId', 'basePrice', 'sizePrices']);
+        unset($this->allItems, $this->activeItems);
+        $this->dispatch('notify', message: 'Prices saved. Items issued from now on use them.');
+    }
+
+    public function cancelPricing(): void
+    {
+        $this->reset(['pricingItemId', 'basePrice', 'sizePrices']);
     }
 
     // ---- Lists ----

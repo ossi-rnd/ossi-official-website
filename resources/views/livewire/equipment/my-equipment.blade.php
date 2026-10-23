@@ -79,10 +79,12 @@
                     @endforeach
                 </x-ui.select>
                 <div class="grid grid-cols-2 gap-4">
-                    @if ($picked?->has_sizes)
-                        <x-ui.select label="Size" wire:model="requestSize">
+                    @if ($picked?->hasSizes())
+                        <x-ui.select label="Size" wire:model.live="requestSize">
                             <option value="">Choose</option>
-                            @foreach (\App\Models\EquipmentItem::SIZES as $size)<option value="{{ $size }}">{{ $size }}</option>@endforeach
+                            @foreach ($picked->sizeList() as $size)
+                                <option value="{{ $size }}">{{ $size }}{{ $picked->kind === \App\Enums\EquipmentKind::Uniform && $picked->priceFor($size) !== null ? ' · '.$picked->priceLabel($size) : '' }}</option>
+                            @endforeach
                         </x-ui.select>
                     @endif
                     <x-ui.input label="Quantity" type="number" min="1" max="{{ \App\Actions\Equipment\RequestEquipment::MAX_QUANTITY }}" wire:model="requestQuantity" />
