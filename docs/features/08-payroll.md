@@ -155,6 +155,19 @@ Approved leave that the law pays is **suggested** on the run (`DetectPaidLeave`)
 
 Code: `DetectPaidLeave`, `AcceptPaidLeave`, `DismissPaidLeave`, `PaidLeavePayment`, `Payroll\PaidLeaveSuggestions`, `AdjustmentCategory::PaidLeave`, `LeaveType::isPaidByLaw()` / `paidAsSssBenefit()`. Migration `2026_10_17_100009`. Tests: `tests/Feature/Payroll/PaidLeaveTest.php`.
 
+## Printed payslips with a QR code (verify it's genuine)
+
+The on-screen payslip blanks itself when printed (`x-sensitive`), so paper comes from its own page: **Print** on My Payslips (the employee's own) and **Print payslip** in the Payroll payslip window (anyone with manage-payroll). Route `payslips.print` (`/payslips/{run}/{user}/print`, `PrintPayslipController`) opens a self-contained A4 sheet in a new tab. It has the seal, the period and pay date, the employee, earnings, deductions and net pay. It is always light, with its own CSS, so it prints the same from any browser. Every print is audited (`payslip.printed`). An employee can't open a Draft run (404), as on My Payslips; nobody else can print another person's payslip (403).
+
+- **No payslip, no Print:** a period with no attendance and nothing generated has no Print link, and its print page is a 404.
+- **Only a generated payslip is official.** It carries a QR code, a 16-character code (`9CKP-JWQA-C110-G6HM`, Crockford base 32, no I/L/O/U) and the link. An estimate prints with "ESTIMATE · NOT AN OFFICIAL PAYSLIP" and no code.
+- **The code** (`App\Support\PayslipVerification`) is an HMAC-SHA256 with `APP_KEY` over the payslip id, employee, run, gross, total deductions and net. It can't be made up without the key. If any of those figures change in the database, the printed code stops matching. If someone edits the paper, the check shows different figures from the ones printed.
+- **The check** (`payslip.verify`, `/verify/payslip/{id}/{code}`, `VerifyPayslipController`) needs no sign-in, so a bank or lender can scan it. It shows a **Verified** stamp under the seal, with only the name, employee number, period, pay date, gross, deductions and net. There are no government IDs and no line-by-line detail. A wrong code shows **Not verified** on a red band (404). The page shows when it was checked, so a screenshot of an old check is easy to spot. It is rate-limited (30 a minute), `noindex` and `no-store`. Lower case and missing dashes are accepted.
+- **Changing `APP_KEY` makes every printed code invalid**, which is one more reason the same key must travel with the database.
+- The privacy notice says who sees this ("Anyone you hand a printed payslip to…"); version 2026-10-23.2.
+
+Tests: `tests/Feature/Payroll/PrintedPayslipTest.php`.
+
 ## My Loans
 
 **My Loans** (Personal menu, `/my-loans`, `MyLoansQuery`) shows each loan, cash advance and company deduction:

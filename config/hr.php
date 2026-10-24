@@ -7,15 +7,19 @@ return [
     | Probation
     |--------------------------------------------------------------------------
     |
+    | Starting values only: HR sets the real ones on Employees → Probation &
+    | training rules (SaveProbationRules, audited; App\Support\ProbationRules).
     | Probation may not exceed six months from the start of work (Labor Code
-    | Art. 296). HR is told `remind_days_before` the end and again on the day,
-    | so the decision (regular or not) is made before the deadline passes.
+    | Art. 296). The head and HR are told `remind_days_before` the end, so the
+    | evaluation is decided in time; with none approved, they become Regular.
+    | `training_days` is a placeholder (Claude's default, for the owner to confirm).
     |
     */
 
     'probation' => [
         'months' => 6,
         'remind_days_before' => 30,
+        'training_days' => 30,
     ],
 
     /*

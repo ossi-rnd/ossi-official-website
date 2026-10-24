@@ -49,12 +49,19 @@ it('locks one email out after 5 attempts a minute', function () {
     $this->post(route('login.store'), ['email' => $user->email, 'password' => 'password'])->assertTooManyRequests();
 });
 
-it('blocks one IP trying many emails', function () {
+it('blocks one IP trying many emails, but lets a shift change through', function () {
+    // Guards on one mobile network or site Wi-Fi share an address: 21 sign-ins a minute is normal.
     foreach (range(1, 20) as $attempt) {
         $this->post(route('login.store'), ['email' => "person{$attempt}@example.test", 'password' => 'wrong']);
     }
+    $guard = employee();
+    $this->post(route('login.store'), ['email' => $guard->email, 'password' => 'password'])->assertRedirect();
+    auth()->logout();
 
-    $this->post(route('login.store'), ['email' => 'person21@example.test', 'password' => 'wrong'])->assertTooManyRequests();
+    foreach (range(22, 60) as $attempt) {
+        $this->post(route('login.store'), ['email' => "person{$attempt}@example.test", 'password' => 'wrong']);
+    }
+    $this->post(route('login.store'), ['email' => 'person61@example.test', 'password' => 'wrong'])->assertTooManyRequests();
 });
 
 it('sends unverified users to the verify-email page', function () {

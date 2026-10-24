@@ -61,7 +61,7 @@ On **Add employee**, HR can switch on **Test account (no real email)** (an `x-ui
 
 `FortifyServiceProvider`:
 
-- `RateLimiter::for('login')`: 5/minute per email+IP **and** 20/minute per IP (stops one password tried on many accounts).
+- `RateLimiter::for('login')`: 5/minute per email+IP (guessing one person's password) **and** 60/minute per IP (stops one password tried on many accounts). The per-IP limit was 20 until 2026-10-24. Smart / Globe mobile data puts many phones behind one shared address, and a site's guards may share one Wi-Fi, so at a shift change the 21st guard was told "Too many attempts". The load test hit exactly that.
 - `Fortify::authenticateUsing()`: same as the default check, plus *resigned or terminated employees can't sign in*. `EnsureAccountIsActive` middleware also ends their open sessions.
 - `HomeController` (Fortify's `home`) sends employers to the dashboard and everyone else to My Attendance.
 - Custom `LogoutResponse`: when the idle timer signs you out, the login page says why.

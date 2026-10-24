@@ -66,7 +66,7 @@ return [
     |--------------------------------------------------------------------------
     */
 
-    'version' => env('PRIVACY_NOTICE_VERSION', '2026-10-23.1'),
+    'version' => env('PRIVACY_NOTICE_VERSION', '2026-10-24.1'),
 
     /*
     |--------------------------------------------------------------------------
@@ -143,6 +143,7 @@ return [
             'body' => [
                 'Identity and contact details: your name, email address, contact number and permanent address.',
                 'Employment records: employee number, position, detachment and post assignment, hire date, employment status and shift schedule.',
+                'Performance records: your probation evaluation (whether you met the standards made known to you when hired, and the reasons), merits and demerits, and Notices to Explain with your explanation and the decision.',
                 'Emergency contact details for the person you nominate.',
                 'Attendance records: for every clock-in and clock-out, a photograph taken at that moment, your GPS coordinates, the street address those coordinates resolve to, and the time.',
                 'The phone you clock in with: a random code the system stores on that phone\'s browser (a cookie), and the type of phone and browser (for example "Android · Chrome"). For security guards, who are issued a company phone, a clock-in or clock-out from a different phone is still recorded, and is shown to Operations and HR so they can check it was you.',
@@ -181,7 +182,7 @@ return [
             'heading' => 'The attendance photograph and location',
             'body' => [
                 'A GPS reading is captured only when you act: when you clock in or out (with a photograph), scan a patrol checkpoint, mark yourself away or back, or tap "Update my location" while away. While you are away the app reminds you to share your location, but it never reads it by itself. This system does not track you in the background or outside your duty.',
-                'Your location while away is seen by those who supervise it: Operations for guards (a Satellite Operation for its own region only) and the Executive for office staff.',
+                'Your location while away is seen by those who supervise it: Operations for guards (a Satellite Operation for its own region only) and, for office staff, their head (HR, Operation HQ, or the President or Vice President).',
                 'They exist to confirm that the person clocking in is the guard assigned to that post at that time, which is the basis on which you are paid and on which the company reports to its clients and to the PNP Supervisory Office for Security and Investigation Agencies.',
                 'To convert your coordinates into a readable street address, those coordinates are sent to an external mapping service. This is described in the next section.',
             ],
@@ -192,7 +193,8 @@ return [
                 'You, for your own records, at any time through this system.',
                 'HR staff: employee records, leave and overtime.',
                 'Accounting staff: payroll figures, deductions and reimbursements, and the attendance records behind payroll (including the photograph and location of each clock-in and clock-out), to check what is paid.',
-                'Supervisors and administrators: attendance for the personnel they supervise.',
+                'Supervisors and administrators: attendance for the personnel they supervise, and the performance records they keep on them (your probation evaluation is written by your head and approved by HR).',
+                'Anyone you hand a printed payslip to, such as a bank or a lender: its QR code lets them confirm with this system that the payslip is genuine. That check shows only your name, employee number, the pay period and pay date, and the gross pay, total deductions and net pay printed on it. It does not show your government ID numbers or the line-by-line breakdown, and it cannot be done without the code on the paper.',
                 'Government agencies where reporting is required by law: the Social Security System, PhilHealth, the Pag-IBIG Fund, the Bureau of Internal Revenue, the Department of Labor and Employment, and the PNP Supervisory Office for Security and Investigation Agencies.',
                 'Client establishments, limited to the fact of your assignment to their post and the times you were on duty there, where the service contract requires it.',
                 'Transfer outside the Philippines: when you clock in or out, and when a supervisor views where you were while away, your GPS coordinates are sent to the Nominatim service operated by the OpenStreetMap Foundation, in order to resolve a street address. Your name, employee number and photograph are not sent to it — only the coordinates. When a supervisor opens one of your recorded locations on a map, those coordinates are likewise sent to Google Maps, operated by Google LLC, again without your name or photograph. Under Section 21 of the Act the company remains accountable for personal data transferred to a third party, including one located abroad.',

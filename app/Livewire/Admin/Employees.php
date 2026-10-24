@@ -3,6 +3,7 @@
 namespace App\Livewire\Admin;
 
 use App\Actions\People\AddEmployee;
+use App\Actions\People\SaveProbationRules;
 use App\Actions\People\ShiftForTimes;
 use App\Enums\Ability;
 use App\Enums\EmploymentStatus;
@@ -14,6 +15,7 @@ use App\Livewire\Forms\EmployeeProfileForm;
 use App\Models\EmployeeProfile;
 use App\Models\Shift;
 use App\Queries\People\MeritTotalsQuery;
+use App\Support\ProbationRules;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -73,6 +75,45 @@ class Employees extends Component
         $count = fn (?bool $office) => $this->filtered()->when($office !== null, fn ($query) => $query->where('is_office_staff', $office))->count();
 
         return ['all' => $count(null), 'field' => $count(false), 'office' => $count(true)];
+    }
+
+    // Probation & training rules: HR sets them (SaveProbationRules, audited).
+    public bool $editingRules = false;
+
+    public string $probationMonths = '';
+
+    public string $remindDaysBefore = '';
+
+    public string $trainingDays = '';
+
+    public function canEditRules(): bool
+    {
+        return $this->currentUser()->can(Ability::ManagePeople->value);
+    }
+
+    public function editRules(): void
+    {
+        abort_unless($this->canEditRules(), 403);
+
+        $this->probationMonths = (string) ProbationRules::months();
+        $this->remindDaysBefore = (string) ProbationRules::remindDaysBefore();
+        $this->trainingDays = (string) ProbationRules::trainingDays();
+        $this->resetErrorBag();
+        $this->editingRules = true;
+    }
+
+    public function saveRules(SaveProbationRules $save): void
+    {
+        $validated = $this->validate([
+            'probationMonths' => ['required', 'integer', 'min:1', 'max:'.ProbationRules::MAX_MONTHS],
+            'remindDaysBefore' => ['required', 'integer', 'min:7', 'max:60'],
+            'trainingDays' => ['required', 'integer', 'min:1', 'max:180'],
+        ], ['probationMonths.max' => 'The law allows no more than 6 months.'], ['probationMonths' => 'probation length', 'remindDaysBefore' => 'days before', 'trainingDays' => 'training length']);
+
+        $save->handle($this->currentUser(), (int) $validated['probationMonths'], (int) $validated['remindDaysBefore'], (int) $validated['trainingDays']);
+
+        $this->editingRules = false;
+        $this->dispatch('notify', message: 'Probation and training rules saved.');
     }
 
     public bool $showForm = false;

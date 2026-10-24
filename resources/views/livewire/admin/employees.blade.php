@@ -71,7 +71,7 @@
                                 @endif
                                 {{-- Still Probationary past the probation months: a warning dot, the date in gray (Art. 296). --}}
                                 @if ($overdueSince = $profile->probationOverdueSince())
-                                    <span class="mt-1 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-500 dark:text-gray-400" title="Past {{ config('hr.probation.months') }} months and still Probationary: decide on regularization.">
+                                    <span class="mt-1 flex items-center gap-1.5 text-xs whitespace-nowrap text-gray-500 dark:text-gray-400" title="Past {{ \App\Support\ProbationRules::months() }} months and still Probationary: they become Regular on the next daily check unless a failed evaluation was approved.">
                                         <span class="size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true"></span>Probation ended {{ $overdueSince->format('M j') }}
                                     </span>
                                 @endif
@@ -102,6 +102,34 @@
 
         <x-slot:footer>{{ $this->employees->links() }}</x-slot:footer>
     </x-ui.card>
+
+    {{-- HR sets these (SaveProbationRules, audited). Probation never more than 6 months (Art. 296). --}}
+    @if ($this->canEditRules())
+        <x-ui.card title="Probation & training rules" description="Both count from the hire date. Every change is in the audit log.">
+            <x-slot:actions>
+                <x-ui.button type="button" variant="secondary" size="sm" wire:click="editRules">Change</x-ui.button>
+            </x-slot:actions>
+            <dl class="grid grid-cols-1 gap-4 px-6 py-5 text-sm sm:grid-cols-3">
+                <div><dt class="text-xs text-gray-500 dark:text-gray-400">Probation</dt><dd class="mt-0.5 font-semibold text-gray-800 tabular-nums dark:text-gray-100">{{ \App\Support\ProbationRules::months() }} {{ str('month')->plural(\App\Support\ProbationRules::months()) }}</dd><dd class="text-xs text-gray-500 dark:text-gray-400">With no approved decision by the last day: Regular automatically.</dd></div>
+                <div><dt class="text-xs text-gray-500 dark:text-gray-400">Head and HR asked to evaluate</dt><dd class="mt-0.5 font-semibold text-gray-800 tabular-nums dark:text-gray-100">{{ \App\Support\ProbationRules::remindDaysBefore() }} days before</dd><dd class="text-xs text-gray-500 dark:text-gray-400">The head evaluates; HR approves.</dd></div>
+                <div><dt class="text-xs text-gray-500 dark:text-gray-400">Training (Trainees)</dt><dd class="mt-0.5 font-semibold text-gray-800 tabular-nums dark:text-gray-100">{{ \App\Support\ProbationRules::trainingDays() }} days</dd><dd class="text-xs text-gray-500 dark:text-gray-400">Then HR and the head are told to move them on. Training counts toward probation.</dd></div>
+            </dl>
+        </x-ui.card>
+    @endif
+
+    @if ($editingRules)
+        <x-ui.modal title="Change the probation & training rules" close="$set('editingRules', false)" max-width="md">
+            <form id="probation-rules-form" wire:submit="saveRules" class="space-y-4">
+                <x-ui.input label="Probation length (months)" type="number" min="1" max="6" wire:model="probationMonths" hint="1 to 6: the law allows no more than 6 months. A change applies to everyone still on probation." />
+                <x-ui.input label="Ask the head and HR to evaluate (days before the end)" type="number" min="7" max="60" wire:model="remindDaysBefore" />
+                <x-ui.input label="Training length for Trainees (days)" type="number" min="1" max="180" wire:model="trainingDays" />
+            </form>
+            <x-slot:footer>
+                <x-ui.button type="button" variant="ghost" wire:click="$set('editingRules', false)">Cancel</x-ui.button>
+                <x-ui.button form="probation-rules-form" wire:target="saveRules">Save</x-ui.button>
+            </x-slot:footer>
+        </x-ui.modal>
+    @endif
 
     @if ($showForm)
         <x-ui.modal title="Add employee" close="$set('showForm', false)" max-width="2xl">

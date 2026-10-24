@@ -4,6 +4,7 @@ namespace App\Queries\People;
 
 use App\Enums\EmploymentStatus;
 use App\Models\EmployeeProfile;
+use App\Support\ProbationRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -20,10 +21,11 @@ final class ProbationEndingQuery
     {
         // ends_on = hire_date + months, and we want ends_on - remind_days <= today.
         $latestHireDate = $today
-            ->addDays((int) config('hr.probation.remind_days_before'))
-            ->subMonthsNoOverflow((int) config('hr.probation.months'));
+            ->addDays(ProbationRules::remindDaysBefore())
+            ->subMonthsNoOverflow(ProbationRules::months());
 
         return EmployeeProfile::query()
+            ->with('user')
             ->where('employment_status', EmploymentStatus::Probationary)
             ->whereNotNull('hire_date')
             ->whereDate('hire_date', '<=', $latestHireDate->toDateString())
@@ -33,6 +35,6 @@ final class ProbationEndingQuery
 
     public static function endsOn(EmployeeProfile $profile): ?CarbonImmutable
     {
-        return $profile->hire_date?->addMonthsNoOverflow((int) config('hr.probation.months'));
+        return ProbationRules::endsOn($profile);
     }
 }

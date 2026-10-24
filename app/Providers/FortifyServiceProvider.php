@@ -47,8 +47,11 @@ class FortifyServiceProvider extends ServiceProvider
             return [
                 // One account: 5 tries a minute (guessing one person's password).
                 Limit::perMinute(5)->by($email.'|'.$request->ip()),
-                // One IP: 20 tries a minute across all emails (one password, many accounts).
-                Limit::perMinute(20)->by('ip|'.$request->ip()),
+                // One IP: 60 tries a minute across all emails (one password, many accounts).
+                // Not lower: Smart / Globe mobile data puts many phones behind one shared address,
+                // and a site's guards may share one Wi-Fi, so a shift change signs in many at once
+                // from one IP (20 blocked the 21st guard in the 5,000-guard load test, 2026-10-24).
+                Limit::perMinute(60)->by('ip|'.$request->ip()),
             ];
         });
 

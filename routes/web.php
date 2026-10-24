@@ -5,6 +5,7 @@ use App\Http\Controllers\AccountSettingsController;
 use App\Http\Controllers\AcknowledgePrivacyNoticeController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PrintCheckpointsController;
+use App\Http\Controllers\PrintPayslipController;
 use App\Http\Controllers\PrivacyNoticeController;
 use App\Http\Controllers\ReverseGeocodeController;
 use App\Http\Controllers\SessionKeepAliveController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\ShowPolicyFileController;
 use App\Http\Controllers\ShowPunchPhotoController;
 use App\Http\Controllers\ShowReimbursementReceiptController;
 use App\Http\Controllers\ShowRequirementDocumentController;
+use App\Http\Controllers\VerifyPayslipController;
 use App\Http\Middleware\EnsureOnPayroll;
 use App\Livewire\Admin\Announcements;
 use App\Livewire\Admin\AttendanceDashboard;
@@ -88,6 +90,11 @@ Route::redirect('/', '/home');
 // Public on purpose: shown before registration collects any personal data (RA 10173 sec. 16(a)).
 Route::get('/privacy-notice', PrivacyNoticeController::class)->name('privacy-notice');
 
+// Public on purpose: a printed payslip's QR code, checked by whoever holds the paper (a bank,
+// a landlord). Rate-limited so codes can't be guessed in bulk.
+Route::get('/verify/payslip/{payslip}/{code}', VerifyPayslipController::class)
+    ->whereNumber('payslip')->middleware('throttle:30,1')->name('payslip.verify');
+
 Route::middleware('auth')->group(function () {
     Route::post('/privacy-notice', AcknowledgePrivacyNoticeController::class)->name('privacy-notice.acknowledge');
 
@@ -108,6 +115,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/company-policy', CompanyPolicies::class)->name('company-policy');
     // Anyone may receive a Notice to Explain; the page lists only their own.
     Route::get('/my-notices', MyNotices::class)->name('my-notices');
+    // The official printable payslip, with its QR code: their own, or anyone's for payroll
+    // (the controller checks), so the Super Admin can print one too.
+    Route::get('/payslips/{run}/{user}/print', PrintPayslipController::class)->name('payslips.print');
 
     // ...and, for those paid through this payroll (not the Executive), attendance and pay.
     Route::middleware(EnsureOnPayroll::class)->group(function () {

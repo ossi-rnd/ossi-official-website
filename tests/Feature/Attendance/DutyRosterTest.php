@@ -192,16 +192,16 @@ describe('the Duty Roster page', function () {
         $page->set('editCustomEnd', '16:30')->call('saveCell')->assertHasNoErrors();
 
         $shift = DutyAssignment::query()->sole()->shift;
-        expect($shift)->name->toBe('Custom')->start_time->toStartWith('07:30')->end_time->toStartWith('16:30');
+        expect($shift)->name->toBe('7:30 AM – 4:30 PM')->start_time->toStartWith('07:30')->end_time->toStartWith('16:30');
 
-        // The same hours again: the same shift, not a second "Custom".
+        // The same hours again: the same shift, not a second one.
         Livewire::actingAs($this->ops)->test(DutyRoster::class)
             ->call('editCell', $this->guard->id, '2026-10-15')
             ->set('editShiftId', DutyRoster::CUSTOM_SHIFT)
             ->set('editCustomStart', '07:30')->set('editCustomEnd', '16:30')->set('editCustomGrace', '10')
             ->call('saveCell')->assertHasNoErrors();
 
-        expect(Shift::query()->where('name', 'Custom')->count())->toBe(1);
+        expect(Shift::query()->where('name', '7:30 AM – 4:30 PM')->count())->toBe(1);
     });
 
     it('fills the empty days with usual shifts, Sunday off, without touching set days', function () {

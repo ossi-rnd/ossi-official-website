@@ -59,7 +59,15 @@
         </button>
 
         <x-ui.card :title="$this->selectedRun->periodLabel()" :description="'Pay date: '.$this->selectedRun->pay_date->format('M j, Y')">
-            <x-slot:actions><x-ui.status-badge :status="$this->selectedRun->status" /></x-slot:actions>
+            <x-slot:actions>
+                <div class="flex items-center gap-3">
+                    <x-ui.status-badge :status="$this->selectedRun->status" />
+                    @php $selectedPayslip = $this->payslips[$this->selectedRun->id]; @endphp
+                    @if ($selectedPayslip->isGenerated || $selectedPayslip->daysWorked > 0)
+                    <a href="{{ route('payslips.print', ['run' => $this->selectedRun, 'user' => auth()->user()]) }}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"><x-icon name="printer" class="h-4 w-4" /> Print</a>
+                    @endif
+                </div>
+            </x-slot:actions>
 
             <x-payslip-breakdown class="p-5" :payslip="$this->payslips[$this->selectedRun->id]" :attendance="$this->attendance" :late-days="$this->lateDays" />
         </x-ui.card>

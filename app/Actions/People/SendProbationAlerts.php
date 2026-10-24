@@ -4,24 +4,27 @@ namespace App\Actions\People;
 
 use App\Enums\Ability;
 use App\Enums\AuditArea;
+use App\Models\ProbationEvaluation;
 use App\Models\SentAlert;
 use App\Models\User;
 use App\Notifications\ProbationEnding;
 use App\Queries\People\ProbationEndingQuery;
 use App\Services\AuditLogger;
+use App\Support\Heads;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
 /**
- * Run daily by the scheduler. Each alert goes out once, however often this runs:
+ * Run daily by the scheduler, after ApplyProbationEnds. To HR and the employee's head (who
+ * evaluates; HR approves). Each alert goes out once, however often this runs:
  *
- *   "ending soon"             30 days before          probation.upcoming
- *   "ends today"              on the day (or up to    probation.due
- *                             a week late, worded as
- *                             "ended N days ago")
- *   "ended N days ago"        every 7 days after,     probation.overdue.1, .2, …
- *                             until HR changes the status
+ *   "ending soon"             the rules' days before    probation.upcoming
+ *   "ends today"              on the day                probation.due
+ *   "ended N days ago"        only if the daily close   probation.overdue.1, .2, …
+ *                             didn't run (it makes them Regular)
+ *
+ * Nobody is reminded once a decision was approved.
  */
 final class SendProbationAlerts
 {
@@ -41,15 +44,19 @@ final class SendProbationAlerts
             return 0;
         }
 
-        $recipients = User::query()->notifiable(Ability::ManagePeople->roles())->get();
+        $hr = User::query()->notifiable(Ability::ManagePeople->roles())->get();
         $sent = 0;
 
         foreach ($profiles as $profile) {
             $endsOn = ProbationEndingQuery::endsOn($profile);
 
-            if ($endsOn === null) {
+            if ($endsOn === null || $profile->probationEvaluations()->where('status', ProbationEvaluation::APPROVED)->exists()) {
                 continue;
             }
+
+            // HR, and the head who evaluates (Operations for a guard); never the employee.
+            $recipients = $hr->merge($profile->user === null ? [] : Heads::of($profile->user))
+                ->unique('id')->reject(fn (User $user) => $user->id === $profile->user_id)->values();
 
             // Days since it ended: negative while still ahead. One alert name per week overdue,
             // so the weekly reminder is sent once a week (each name only once).

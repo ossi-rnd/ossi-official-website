@@ -2,7 +2,44 @@
 
 What changed, why, and where to read more. Newest first. Each entry was built the same way: understand the existing code → small change → Pest tests → PHPStan (level 8) and Pint → a check in a real browser (Playwright) on a **scratch copy** of the database → docs.
 
+## 2026-10-24
+
+**Probation: the head evaluates, HR approves, Regular by law; statuses only from processes**
+- **Why:** the owner asked who approves status changes, whether the system alerts, what happens after 6 months, and whether HR can set the training length. Their choices: the head evaluates and HR approves; with no decision by the end, Regular automatically; Resigned and Terminated only through their processes. "Force them to resign" was not built: it would be constructive dismissal.
+- **Evaluation** (employee page → Probation card): the head (`Heads`) records Pass or Doesn't meet the standards, with reasons (`EvaluateProbation`). HR approves or sends it back (`DecideProbationEvaluation`); HR's own evaluation counts as approved. A pass makes them Regular at once. An approved fail serves the written notice now and ends employment after the last day. A fail can't be approved after the last day.
+- **Daily** (`app:send-probation-alerts`): `ApplyProbationEnds` makes anyone past probation Regular, or Terminated after an approved fail. Probation alerts now go to the head too, and stop once a decision is approved. New Trainee alerts go out when the training length is up (`SendTrainingAlerts`).
+- **Rules in the app** (Employees → Probation & training rules, `ProbationRules` + `SaveProbationRules`, audited): probation 1–6 months (default 6), ask 30 days before, training **30 days (my default, confirm it)**. They used to be only in `config/hr.php`.
+- **Status list:** Add / Edit employee offers only Trainee, Probationary, Regular, Project-based (checked on the server). A Notice to Explain decided as **Dismissal** now sets Terminated itself (before, HR had to do it by hand, and nothing else ever set it).
+- **Privacy notice:** "Performance records" are listed, and supervisors are said to see them. A leftover "the Executive" (time away for office staff) became "their head". Version **2026-10-24.1**.
+- **Migration** `2026_10_24_100001` (`probation_evaluations`): dev and the pilot were backed up and migrated before the code.
+- **Checks:** 10 new tests, 2 old ones rewritten (weekly overdue reminders became "Regular by law"); the dismissal test checks Terminated. Browser check on a seeded copy: Operation HQ evaluates (desktop), HR approves (phone), the rules card. 1,000 tests pass.
+- **Not built:** project-based end dates (ending a project employee needs its own decision).
+- **Training counts toward probation** (owner agreed, for counsel to confirm): probation runs from the hire date (first day of work), training included. The Trainee note shows probation's last day, and the rules card says so. The hire date is the first day of work, not a pre-licensing course taken before OSSI engages them.
+
+**Fixed: adding an employee with new shift hours crashed (500)**
+- **What happened (the owner, on the pilot):** Add employee with 9–6 gave "Something broke". Typed hours that match no saved shift become a new shift (`ShiftForTimes`), and every new one was named "Custom". Shift names are unique, and the pilot already had a "Custom" (8–6), so the second insert failed.
+- **The fix:** a new shift is named by its hours ("9:00 AM – 6:00 PM"). If those hours exist with another grace, it becomes "9:00 AM – 6:00 PM · 10 min grace", then it is numbered. The same hours and grace still reuse the existing shift. This covers both Add employee and the Duty Roster's "Custom time…".
+- **Why tests missed it:** they only ever made one custom shift. A new test adds three employees with different hours after an existing "Custom".
+- The pilot's existing "Custom" shift (8:00–18:00, used by 6 employees) keeps its name; it can be renamed on Shifts.
+
+**Payday spike check, and a sign-in limit that would have blocked guards**
+- **The question (the owner's):** will 2,000 to 5,000 employees opening their payslips at once crash the site?
+- **The test,** on the 5,000-guard copy: 60 guards sign in, then all open the same page at the same moment. My Payslips took ≈ 85 ms a page; all 60 were done in 5.1 s, with no errors. The printable payslip took ≈ 66 ms; all 60 were done in 4.0 s.
+- **The finding:** the pilot's PHP built-in server answers one request at a time (it can't run more on Windows). So a spike waits in line, about 700 pages a minute, instead of crashing. Real use at 2,000+ needs several workers and MySQL, which is the Laravel Cloud plan. The app itself is fast enough.
+- **Fixed:** sign-in was limited to 20 a minute per internet address. Smart / Globe mobile data puts many phones behind one shared address, and a site's guards may share one Wi-Fi, so at a shift change the 21st guard got "Too many attempts". The test hit it at sign-in 21 every time. It is now **60 a minute per address** (`FortifyServiceProvider`; my default, the owner agreed). The limit of 5 tries a minute per account is unchanged, so guessing one person's password is still blocked. Re-run: 60 guards from one address signed in without a wait.
+- **Noticed:** the owner's `.env` still pins `PRIVACY_NOTICE_VERSION=2026-10-08.1`, so the pilot shows the old notice until it's set to `2026-10-23.2`.
+
 ## 2026-10-23
+
+**Printable payslip with a QR code that proves it's genuine**
+- **Why:** a payslip handed to a bank or lender could be edited or made up. Also, the on-screen payslip blanks itself when printed (`x-sensitive`), so there was no clean way to print one.
+- **Print:** **Print** on My Payslips and **Print payslip** in the Payroll payslip window open an A4 page in a new tab (`PrintPayslipController`, `payslips/print.blade.php`). It has the seal, earnings, deductions, net pay, and who printed it and when. Every print is audited (`payslip.printed`). Only the employee themselves or manage-payroll can print, and a Draft run stays hidden from the employee.
+- **QR code:** only a generated payslip gets one, with a 16-character code (`App\Support\PayslipVerification`: an HMAC with `APP_KEY` over the payslip, employee, run and its totals). An estimate prints "ESTIMATE · NOT AN OFFICIAL PAYSLIP" with no code.
+- **Check page:** `/verify/payslip/{id}/{code}` needs no sign-in. It shows a **Verified** stamp (the owner's word; first built as "Genuine payslip" with a blue tick, which they didn't like) with the name, employee number, period, pay date, gross, deductions and net. The net pay stands out, and the time of the check is shown. A forged code, or a payslip changed after printing, shows **Not verified** on a red band. It is rate-limited and not indexed.
+- **Privacy notice:** a new line in "Who we share it with" says what the check shows to whoever holds the paper. The version is bumped to **2026-10-23.2** (config and `.env.example`). The owner's `.env` pins its own `PRIVACY_NOTICE_VERSION` and must be updated.
+- **Checks:** 6 new tests; a browser check on the 5,000-guard test copy (print page, A4 PDF, verify on a phone, forged code → 404).
+- **Nothing to print, no Print:** with no attendance and nothing generated ("No attendance in this period"), the Print link is hidden on both screens and the print page answers 404. The owner's screenshot showed Print on such a period.
+- **What went wrong:** PHPStan flagged the base-32 step (`bindec()` may return a float). I rewrote it with integer bit shifts; the codes came out identical.
 
 **SQLite: web and worker can write together ("database is locked" fixed)**
 - **What happened:** on the 5,000-guard test copy, "Generate all" stopped at 0 of 4,911, three times: `SQLSTATE[HY000]: General error: 5 database is locked`. The worker was writing payslips while the page saved its session on every 2-second poll. SQLite allows one writer, and by default a second writer gave up at once.

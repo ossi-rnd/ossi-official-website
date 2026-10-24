@@ -88,7 +88,7 @@ final class NoticeToExplainNotice extends Notification implements ShouldQueue
             self::ISSUED => ["Please explain in writing by {$notice->explain_by->format('M j, Y')}. It could lead to: {$notice->possible_penalty->label()}.", 'Open My Notices to read it and give your explanation.'],
             self::EXPLAINED => [$notice->wants_hearing ? 'They ask for a hearing.' : 'Read it and decide.'],
             self::HEARING => ["{$notice->hearing_at?->format('D, M j, g:i A')} at {$notice->hearing_place}."],
-            self::DISMISSAL_HR => ["{$notice->subject}. Set \"Terminated\" on their employee record, and start the clearance and final pay."],
+            self::DISMISSAL_HR => ["{$notice->subject}. Their record is now Terminated and their account is closed. Start the clearance and final pay."],
             default => [
                 $notice->decision?->label().($notice->decision === NteOutcome::Suspension ? ": {$notice->suspension_days} days from {$notice->suspension_from?->format('M j')}" : '').'.',
                 (string) $notice->decision_reason,

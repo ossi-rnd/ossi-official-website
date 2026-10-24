@@ -43,6 +43,60 @@
         <x-ui.alert tone="blue">Registered, but hasn't clicked the email confirmation link yet.</x-ui.alert>
     @endif
 
+    {{-- Probation (Art. 296): the head evaluates, HR approves; with nothing approved by the last day, Regular by law. --}}
+    @if ($profile->employment_status === \App\Enums\EmploymentStatus::Probationary)
+        @php
+            $endsOn = \App\Support\ProbationRules::endsOn($profile);
+            $daysLeft = $endsOn === null ? null : (int) \Carbon\CarbonImmutable::today()->diffInDays($endsOn, false);
+            $evaluation = $this->evaluation;
+        @endphp
+        <x-ui.card title="Probation" :description="match (true) {
+            $endsOn === null => 'No hire date, so the end of probation is unknown. HR adds it on the record.',
+            $daysLeft < 0 => 'Ended '.$endsOn->format('M j, Y').': they become Regular on the next daily check unless a failed evaluation was approved in time.',
+            $daysLeft === 0 => 'Last day today ('.$endsOn->format('M j, Y').').',
+            default => 'Last day '.$endsOn->format('M j, Y').' · '.$daysLeft.' '.str('day')->plural($daysLeft).' left. The head evaluates, HR approves; with no approved decision by then, they become Regular.',
+        }">
+            @if ($this->canEvaluate())
+                <x-slot:actions>
+                    <x-ui.button type="button" variant="secondary" size="sm" wire:click="startEvaluation"><x-icon name="pencil" class="h-4 w-4" /> Evaluate</x-ui.button>
+                </x-slot:actions>
+            @endif
+            <div class="p-4 text-sm">
+                @if ($evaluation === null)
+                    <p class="text-gray-500 dark:text-gray-400">No evaluation yet.</p>
+                @else
+                    <div class="flex flex-wrap items-center gap-2">
+                        <x-ui.badge :tone="$evaluation->passes() ? 'blue' : 'amber'">{{ $evaluation->outcomeLabel() }}</x-ui.badge>
+                        <x-ui.badge :tone="match ($evaluation->status) { 'approved' => 'blue', 'returned' => 'gray', default => 'amber' }">{{ match ($evaluation->status) { 'approved' => 'Approved by HR', 'returned' => 'Sent back', default => 'Waiting for HR' } }}</x-ui.badge>
+                    </div>
+                    <p class="mt-2 text-gray-800 dark:text-gray-100">{{ $evaluation->reason }}</p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Evaluated by {{ $evaluation->evaluator?->name ?? 'someone no longer here' }}, {{ $evaluation->evaluated_at->format('M j, Y') }}@if ($evaluation->decided_at) · {{ $evaluation->status === 'approved' ? 'approved' : 'sent back' }} by {{ $evaluation->decider?->name ?? 'HR' }}, {{ $evaluation->decided_at->format('M j, Y') }}@endif
+                    </p>
+                    @if ($evaluation->decision_note)
+                        <p class="mt-2 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-gray-800/60 dark:text-gray-300">HR: {{ $evaluation->decision_note }}</p>
+                    @endif
+                    @if ($evaluation->status === 'approved' && ! $evaluation->passes() && ! $profile->isClaimed())
+                        <x-ui.alert tone="amber" class="mt-3 text-xs">Not registered, so the notice couldn't be sent in the app. Give it to them in writing before {{ $endsOn?->format('M j, Y') }}.</x-ui.alert>
+                    @endif
+                    @if ($this->canDecideEvaluation())
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <x-ui.button type="button" size="sm" wire:click="approveEvaluation" wire:confirm="{{ $evaluation->passes() ? 'Approve? '.$profile->name.' becomes Regular now, and is told.' : 'Approve? '.$profile->name.' receives the written notice now, and their employment ends after '.$endsOn?->format('M j, Y').'.' }}"><x-icon name="check" class="h-4 w-4" /> Approve</x-ui.button>
+                            <x-ui.button type="button" size="sm" variant="secondary" wire:click="startReturn"><x-icon name="chevron-left" class="h-4 w-4" /> Send back</x-ui.button>
+                        </div>
+                        @error('decision') <x-ui.alert tone="red" class="mt-3 text-xs">{{ $message }}</x-ui.alert> @enderror
+                    @endif
+                @endif
+            </div>
+        </x-ui.card>
+    @elseif ($profile->employment_status === \App\Enums\EmploymentStatus::Trainee && $profile->hire_date)
+        @php $trainingEnds = \App\Support\ProbationRules::trainingEndsOn($profile); @endphp
+        <x-ui.alert :tone="$trainingEnds?->isPast() ? 'amber' : 'blue'">
+            Trainee: training {{ $trainingEnds?->isPast() ? 'ended' : 'ends' }} {{ $trainingEnds?->format('M j, Y') }} ({{ \App\Support\ProbationRules::trainingDays() }} days from the hire date). HR and their head are told; HR then changes their status, usually to Probationary.
+            <strong>Training counts toward probation:</strong> its last day is {{ \App\Support\ProbationRules::endsOn($profile)?->format('M j, Y') }}, from the hire date (Labor Code Art. 296).
+        </x-ui.alert>
+    @endif
+
     {{-- A guard's company phone (CheckPunchDevice): punches from another one are flagged, never refused. --}}
     @if ($profile->user && ! $profile->is_office_staff && auth()->user()?->can(\App\Enums\Ability::ManageGuardPhones->value))
         @php $phone = $profile->user->device; @endphp
@@ -291,6 +345,42 @@
             </form>
             <x-slot:footer>
                 <x-ui.button form="deploy-employee" wire:loading.attr="disabled" wire:target="saveDeployment">Save deployment</x-ui.button>
+            </x-slot:footer>
+        </x-ui.modal>
+    @endif
+
+    @if ($evaluating)
+        @php $evalEnds = \App\Support\ProbationRules::endsOn($profile); @endphp
+        <x-ui.modal :title="'Evaluate '.$profile->name.'\'s probation'" close="$set('evaluating', false)" max-width="lg">
+            <form id="evaluate-probation" wire:submit="evaluate" class="space-y-4">
+                <fieldset class="space-y-3">
+                    <legend class="ui-label mb-2">Result</legend>
+                    <x-ui.radio name="evaluation-outcome" label="Pass: make Regular" description="They met the standards. Once HR approves, they're Regular at once." wire:model.live="evaluationOutcome" value="pass" />
+                    <x-ui.radio name="evaluation-outcome" label="Doesn't meet the standards" description="Only against the standards made known to them when hired (Labor Code Art. 296)." wire:model.live="evaluationOutcome" value="fail" />
+                    @error('evaluationOutcome') <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
+                </fieldset>
+                <x-ui.textarea :label="$evaluationOutcome === 'fail' ? 'Which standards weren\'t met, and how' : 'How they did'" wire:model="evaluationReason" rows="4" :hint="$evaluationOutcome === 'fail' ? 'The employee receives this in writing.' : null" />
+                @if ($evaluationOutcome === 'fail')
+                    <x-ui.alert tone="amber" class="text-xs">Once HR approves, the employee receives this notice, and their employment ends after {{ $evalEnds?->format('M j, Y') }}, the last day of probation. HR must approve by then; after it, the law makes them Regular.</x-ui.alert>
+                @endif
+                @error('evaluation') <x-ui.alert tone="red" class="text-xs">{{ $message }}</x-ui.alert> @enderror
+            </form>
+            <x-slot:footer>
+                <x-ui.button type="button" variant="ghost" wire:click="$set('evaluating', false)">Cancel</x-ui.button>
+                <x-ui.button form="evaluate-probation" wire:loading.attr="disabled" wire:target="evaluate">{{ auth()->user()?->can(\App\Enums\Ability::ManagePeople->value) ? 'Save and approve' : 'Send to HR' }}</x-ui.button>
+            </x-slot:footer>
+        </x-ui.modal>
+    @endif
+
+    @if ($returning)
+        <x-ui.modal title="Send the evaluation back" close="$set('returning', false)">
+            <form id="return-evaluation" wire:submit="returnEvaluation" class="space-y-4">
+                <x-ui.textarea label="Why (the head sees this)" wire:model="decisionNote" rows="3" />
+                @error('decision') <x-ui.alert tone="red" class="text-xs">{{ $message }}</x-ui.alert> @enderror
+            </form>
+            <x-slot:footer>
+                <x-ui.button type="button" variant="ghost" wire:click="$set('returning', false)">Cancel</x-ui.button>
+                <x-ui.button form="return-evaluation" wire:loading.attr="disabled" wire:target="returnEvaluation">Send back</x-ui.button>
             </x-slot:footer>
         </x-ui.modal>
     @endif

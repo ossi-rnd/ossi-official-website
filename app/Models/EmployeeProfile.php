@@ -9,6 +9,7 @@ use App\Enums\Region;
 use App\Enums\Requirement;
 use App\Enums\Role;
 use App\Support\EmployeeNumber;
+use App\Support\ProbationRules;
 use Carbon\CarbonImmutable;
 use Database\Factories\EmployeeProfileFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -247,7 +248,8 @@ class EmployeeProfile extends Model
     /**
      * When probation ended, for someone still marked Probationary past it; null
      * otherwise. Labor Code Art. 296: allowed to keep working, they're regular by
-     * law, so the Employees list and HR's dashboard flag it until HR decides.
+     * law. The daily ApplyProbationEnds makes it so; until it runs, the Employees
+     * list and HR's dashboard flag it.
      */
     public function probationOverdueSince(): ?CarbonImmutable
     {
@@ -255,9 +257,9 @@ class EmployeeProfile extends Model
             return null;
         }
 
-        $endsOn = CarbonImmutable::parse($this->hire_date)->addMonthsNoOverflow((int) config('hr.probation.months'));
+        $endsOn = ProbationRules::endsOn($this);
 
-        return $endsOn->isBefore(CarbonImmutable::today()) ? $endsOn : null;
+        return $endsOn?->isBefore(CarbonImmutable::today()) ? $endsOn : null;
     }
 
     /**
@@ -269,7 +271,7 @@ class EmployeeProfile extends Model
     {
         $query->where('employment_status', EmploymentStatus::Probationary)
             ->whereNotNull('hire_date')
-            ->whereDate('hire_date', '<', CarbonImmutable::today()->subMonthsNoOverflow((int) config('hr.probation.months'))->toDateString());
+            ->whereDate('hire_date', '<', CarbonImmutable::today()->subMonthsNoOverflow(ProbationRules::months())->toDateString());
     }
 
     /**
@@ -310,6 +312,14 @@ class EmployeeProfile extends Model
     public function rates(): HasMany
     {
         return $this->hasMany(EmployeeRate::class);
+    }
+
+    /**
+     * @return HasMany<ProbationEvaluation, $this>
+     */
+    public function probationEvaluations(): HasMany
+    {
+        return $this->hasMany(ProbationEvaluation::class);
     }
 
     /**

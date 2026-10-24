@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\EmploymentStatus;
 use App\Enums\Role;
 use App\Models\ActivityLog;
 use App\Models\EmployeeProfile;
 use App\Notifications\ProbationEnding;
+use App\Notifications\UpdateNotice;
 use App\Queries\Dashboard\DashboardHighlightsQuery;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Notification;
@@ -66,37 +68,27 @@ it('emails HR as well as filling the bell', function () {
         ->and($alert->toArray($this->hr)['title'])->toStartWith('Probation ending soon');
 });
 
-it('reminds HR every week while someone is still Probationary past it, until the status changes', function () {
-    // Hired Apr 1 → six months on Oct 1; today is Oct 8.
-    $profile = EmployeeProfile::factory()->create(['employment_status' => 'probationary', 'hire_date' => '2026-04-01', 'name' => 'Rico Santos']);
+it('makes someone Regular by law once probation passes with no approved decision, and tells them and HR', function () {
+    // Hired Apr 1 → six months on Oct 1; today is Oct 8. No reminders: the status changes instead.
+    $guard = employee(['employment_status' => 'probationary', 'hire_date' => '2026-04-01', 'name' => 'Rico Santos']);
 
-    $this->artisan('app:send-probation-alerts')->expectsOutput('Sent 1 probation alert.');
-    Notification::assertSentTo($this->hr, ProbationEnding::class, fn (ProbationEnding $alert) => $alert->daysPast === 7
-        && $alert->toArray($this->hr)['title'] === 'Probation ended 7 days ago: Rico Santos'
-        && str_contains($alert->toArray($this->hr)['body'], 'Art. 296'));
+    $this->artisan('app:send-probation-alerts')->expectsOutput('Closed 1 probation.')->expectsOutput('Sent 0 probation alerts.');
 
-    // Daily runs in between send nothing; the next week, one more.
-    foreach (['2026-10-09', '2026-10-14'] as $day) {
-        $this->travelTo(CarbonImmutable::parse("{$day} 07:00"));
-        $this->artisan('app:send-probation-alerts')->expectsOutput('Sent 0 probation alerts.');
-    }
-    $this->travelTo(CarbonImmutable::parse('2026-10-15 07:00'));
-    $this->artisan('app:send-probation-alerts')->expectsOutput('Sent 1 probation alert.');
-    Notification::assertSentToTimes($this->hr, ProbationEnding::class, 2);
+    expect($guard->employeeProfile()->firstOrFail()->employment_status)->toBe(EmploymentStatus::Regular)
+        ->and(ActivityLog::query()->where('event', 'probation.regularized')->count())->toBe(1);
+    Notification::assertSentTo($guard, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === 'You are now a Regular employee');
+    Notification::assertSentTo($this->hr, UpdateNotice::class, fn (UpdateNotice $notice) => $notice->title === 'Now Regular: Rico Santos');
+    Notification::assertNotSentTo($this->hr, ProbationEnding::class);
 
-    // Regularized: no more reminders.
-    $profile->forceFill(['employment_status' => 'regular'])->save();
-    $this->travelTo(CarbonImmutable::parse('2026-10-22 07:00'));
-    $this->artisan('app:send-probation-alerts')->expectsOutput('Sent 0 probation alerts.');
+    // Once only.
+    $this->artisan('app:send-probation-alerts')->doesntExpectOutput('Closed 1 probation.');
 });
 
-it('words a late first alert as "ended N days ago", not "ends today"', function () {
-    // Hired Apr 5 → ended Oct 5; the scheduler wasn't running until Oct 8.
-    EmployeeProfile::factory()->create(['employment_status' => 'probationary', 'hire_date' => '2026-04-05', 'name' => 'Lea Cruz']);
+it('words a late alert as "ended N days ago", citing Art. 296', function () {
+    $alert = new ProbationEnding(EmployeeProfile::factory()->create(['name' => 'Lea Cruz']), CarbonImmutable::parse('2026-10-05'), 3);
 
-    $this->artisan('app:send-probation-alerts');
-
-    Notification::assertSentTo($this->hr, ProbationEnding::class, fn (ProbationEnding $alert) => $alert->toArray($this->hr)['title'] === 'Probation ended 3 days ago: Lea Cruz');
+    expect($alert->toArray($this->hr)['title'])->toBe('Probation ended 3 days ago: Lea Cruz')
+        ->and($alert->toArray($this->hr)['body'])->toContain('Art. 296');
 });
 
 it('flags those past probation on the Employees list and HR\'s dashboard', function () {

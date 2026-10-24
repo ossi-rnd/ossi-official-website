@@ -183,6 +183,22 @@ class EmployeeProfileForm extends Form
     }
 
     /**
+     * The statuses HR can pick. Resigned and Terminated aren't picked: they come from the
+     * resignation flow, a Notice to Explain decided as dismissal, or a failed probation
+     * (owner, 2026-10-24). A record already Resigned or Terminated keeps that status listed,
+     * read from the database (never from the browser), so it can still be saved.
+     *
+     * @return list<EmploymentStatus>
+     */
+    public function statusChoices(): array
+    {
+        $current = $this->profileId === null ? null : EmployeeProfile::query()->whereKey($this->profileId)->value('employment_status');
+        $current = $current instanceof EmploymentStatus ? $current : EmploymentStatus::tryFrom((string) $current);
+
+        return $current !== null && ! $current->isActive() ? [...EmploymentStatus::active(), $current] : EmploymentStatus::active();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function rules(): array
@@ -217,7 +233,7 @@ class EmployeeProfileForm extends Form
             'position' => ['nullable', Rule::in(array_map(fn (Position $position) => $position->value, Position::for($this->is_office_staff)))],
             // The number is made from these two.
             'hire_date' => $this->numberSource === self::GENERATE ? ['required', 'date'] : ['nullable', 'date'],
-            'employment_status' => ['required', Rule::enum(EmploymentStatus::class)],
+            'employment_status' => ['required', Rule::in(array_map(fn (EmploymentStatus $status) => $status->value, $this->statusChoices()))],
             // A listed shift, or "custom" with the times typed below.
             'shift_id' => ['nullable', function (string $attribute, mixed $value, \Closure $fail) {
                 if ($value !== self::CUSTOM_SHIFT && ! Shift::query()->whereKey((int) $value)->exists()) {

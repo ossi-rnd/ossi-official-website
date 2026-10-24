@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\EmployeeProfile;
 use App\Models\User;
+use App\Support\ProbationRules;
 use App\Support\WritesBellImmediately;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
@@ -12,8 +13,8 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Tells HR that an employee's probation ends soon, ends today, or ended and
- * is still undecided (weekly), so the regularization decision is made: under
+ * Tells HR and the employee's head that probation ends soon, ends today, or ended and
+ * is still undecided, so the head evaluates and HR approves in time: under
  * Labor Code Art. 296, someone allowed to keep working after probation is
  * regular by law, whatever their record says.
  */
@@ -50,7 +51,7 @@ final class ProbationEnding extends Notification implements ShouldQueue
             ->greeting("Hello {$notifiable->name},")
             ->line($this->body())
             ->action('Open employee record', $this->url())
-            ->line('Update the employment status once a decision is made.');
+            ->line('Their head evaluates on the employee record; HR approves. With no approved decision by the last day, they become Regular automatically.');
     }
 
     /**
@@ -72,15 +73,15 @@ final class ProbationEnding extends Notification implements ShouldQueue
 
     private function body(): string
     {
-        $months = (int) config('hr.probation.months');
+        $months = ProbationRules::months();
         $who = "{$this->profile->name} ({$this->profile->employee_number})";
 
         if ($this->daysPast > 0) {
             return "{$who} passed {$months} months of probation on {$this->endsOn->format('M j, Y')} and is still marked Probationary. "
-                .'Under Labor Code Art. 296, an employee allowed to keep working after probation becomes regular. Decide now.';
+                .'Under Labor Code Art. 296, an employee allowed to keep working after probation becomes regular.';
         }
 
-        return "{$who} reaches {$months} months of probation on {$this->endsOn->format('M j, Y')}. Decide on regularization.";
+        return "{$who} reaches {$months} months of probation on {$this->endsOn->format('M j, Y')}. Evaluate them before then: pass, or doesn't meet the standards.";
     }
 
     private function url(): string

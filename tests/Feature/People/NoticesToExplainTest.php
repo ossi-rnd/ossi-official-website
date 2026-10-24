@@ -5,11 +5,13 @@ use App\Actions\People\DecideNotice;
 use App\Actions\People\ExplainNotice;
 use App\Actions\People\IssueNoticeToExplain;
 use App\Actions\People\ScheduleNoticeHearing;
+use App\Enums\EmploymentStatus;
 use App\Enums\NteOutcome;
 use App\Enums\Region;
 use App\Enums\Role;
 use App\Livewire\Admin\NoticesToExplain;
 use App\Livewire\Notices\MyNotices;
+use App\Models\ActivityLog;
 use App\Models\Client;
 use App\Models\MeritType;
 use App\Models\NoticeToExplain;
@@ -131,11 +133,13 @@ it('decides a suspension with its days, can add a demerit, and tells HR of a dis
     app(AcknowledgeNotice::class)->handle($this->guard, $decided);
     expect($decided->fresh()?->decision_acknowledged_at)->not->toBeNull();
 
-    // A dismissal: HR is told to update the record.
+    // A dismissal: the record becomes Terminated (never picked by hand), and HR is told.
     $second = app(IssueNoticeToExplain::class)->handle($this->executive, $this->accountant, 'Falsified receipts', CarbonImmutable::today(), 'Submitted three receipts on Oct 10 that the supplier says it never issued.', 'Code of Conduct, Section 9: Dishonesty.', NteOutcome::Dismissal, CarbonImmutable::parse('2026-10-21'));
     $this->travelTo(CarbonImmutable::parse('2026-10-22 09:00'));
     app(DecideNotice::class)->handle($this->executive, $second, NteOutcome::Dismissal, 'No explanation given; the supplier confirmed in writing that the receipts are false.');
     Notification::assertSentTo([$this->hr, $this->otherHr], NoticeToExplainNotice::class, fn (NoticeToExplainNotice $n) => $n->event === NoticeToExplainNotice::DISMISSAL_HR);
+    expect($this->accountant->employeeProfile()->firstOrFail()->employment_status)->toBe(EmploymentStatus::Terminated)
+        ->and(ActivityLog::query()->where('event', 'nte.terminated')->count())->toBe(1);
 });
 
 it('works from the pages: issued by Operations, explained by the guard on My Notices', function () {

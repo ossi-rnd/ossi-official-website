@@ -56,7 +56,12 @@ Last audited 2026-10-22, across all 172 Actions. The audit added the **New** row
 | Absence reported, no-show, guard arrived | Operations (the region's Satellite, then HQ) | AbsenceNoticeFiled, NoShowAlert |
 | Patrol round missed, time away overdue | Operations / the President or VP | PatrolAlert |
 | Other phone used to clock in | Operation HQ, the region's Satellite, HR | OtherPhoneUsed |
-| Probation ending, 201 documents expiring | HR | ProbationEnding, RequirementNotice |
+| Probation ending (evaluate) | HR and the employee's head | ProbationEnding |
+| Probation evaluation to approve / sent back / approved | HR / the head who evaluated | UpdateNotice |
+| Now Regular, or the written notice of a failed probation | the employee (bell + email) | UpdateNotice |
+| Probation closed by the daily check (Regular by law, or employment ended) | the employee and HR | UpdateNotice |
+| Trainee's training is up | HR and the employee's head | UpdateNotice (SendTrainingAlerts) |
+| 201 documents expiring | HR | RequirementNotice |
 | Birthdays today | HR, and Operations for guards | BirthdayToday |
 | Documents / radio NTC permits nearing expiry | Admin (+ Operation HQ for radios) | DocumentDueNotice, RadioPermitDue |
 | Reimbursement filed, approved (to pay) | the President or VP, Accounting | ReimbursementNotice |

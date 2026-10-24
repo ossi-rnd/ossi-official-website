@@ -184,11 +184,14 @@
             <p class="ui-label">Shift hours</p>
             <x-shift-hours class="mt-1" wire:key="custom-shift" start="form.custom_start" end="form.custom_end" grace="form.custom_grace" />
         </div>
-        <x-ui.select label="Employment status" wire:model="form.employment_status">
-            @foreach (\App\Enums\EmploymentStatus::cases() as $status)
-                <option value="{{ $status->value }}">{{ $status->label() }}</option>
-            @endforeach
-        </x-ui.select>
+        <div>
+            <x-ui.select label="Employment status" wire:model="form.employment_status">
+                @foreach ($this->form->statusChoices() as $status)
+                    <option value="{{ $status->value }}">{{ $status->label() }}</option>
+                @endforeach
+            </x-ui.select>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Resigned and Terminated come from a resignation, a dismissal, or a failed probation.</p>
+        </div>
     </div>
 
     <p class="ui-section-label pt-2">Contact</p>

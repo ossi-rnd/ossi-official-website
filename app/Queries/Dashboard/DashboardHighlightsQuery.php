@@ -13,6 +13,7 @@ use App\Models\PayrollRun;
 use App\Models\Training;
 use App\Models\User;
 use App\Queries\People\ProbationEndingQuery;
+use App\Support\ProbationRules;
 use Carbon\CarbonImmutable;
 
 /**
@@ -59,7 +60,7 @@ final class DashboardHighlightsQuery
 
             // The count includes those already past it; the hint says how many, since they're regular by law (Art. 296).
             $overdue = EmployeeProfile::query()->probationOverdue()->count();
-            $tiles[] = self::tile('People', 'Probation ending', (string) $ending, $overdue > 0 ? "{$overdue} already past ".config('hr.probation.months').' months' : 'within '.config('hr.probation.remind_days_before').' days', route('employees', ['status' => EmploymentStatus::Probationary->value]), $ending > 0 ? 'amber' : 'gray', 'clock');
+            $tiles[] = self::tile('People', 'Probation ending', (string) $ending, $overdue > 0 ? "{$overdue} already past ".ProbationRules::months().' months' : 'within '.ProbationRules::remindDaysBefore().' days', route('employees', ['status' => EmploymentStatus::Probationary->value]), $ending > 0 ? 'amber' : 'gray', 'clock');
             $tiles[] = self::tile('People', 'Hired this month', (string) $hired, $today->format('F Y'), route('employees'), icon: 'user-plus');
             $tiles[] = self::tile('People', 'No account yet', (string) $noAccount, 'not registered', route('employees', ['account' => 'unregistered']), $noAccount > 0 ? 'amber' : 'gray', 'user');
         }

@@ -214,6 +214,11 @@
             <x-ui.modal :title="$this->selectedEmployee->name.' · '.$run->periodLabel()" close="closePayslip" max-width="xl">
                 @error('payslip') <x-ui.alert tone="red" class="mb-4">{{ $message }}</x-ui.alert> @enderror
 
+                @if ($payslip->isGenerated || $payslip->daysWorked > 0)
+                    <div class="mb-3 flex justify-end">
+                        <a href="{{ route('payslips.print', ['run' => $this->selectedRun, 'user' => $this->selectedEmployee]) }}" target="_blank" rel="noopener" class="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"><x-icon name="printer" class="h-4 w-4" /> Print payslip</a>
+                    </div>
+                @endif
                 <x-payslip-breakdown :payslip="$payslip" :attendance="$this->selectedAttendance" :late-days="$this->selectedLateDays" />
 
                 @if ($this->selectedRecord)

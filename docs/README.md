@@ -83,6 +83,7 @@ A request, end to end: **Route** (`can:` gate) → **Livewire component** (re-ch
 32. [Birthdays, petty cash, NTC radios and referrals](features/32-birthdays-petty-cash-radios-referrals.md)
 33. [Notifications: who is told what](features/33-notifications.md)
 34. [Equipment: uniforms, radios and gear (authority to deduct, accountability, damage and loss)](features/34-equipment.md)
+35. [Probation, training and employment status (head evaluates, HR approves, Regular by law)](features/35-probation-and-employment-status.md)
 
 What changed, day by day, and why: [CHANGELOG.md](CHANGELOG.md).
 

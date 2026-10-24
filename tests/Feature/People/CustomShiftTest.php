@@ -32,7 +32,7 @@ it('starts a new employee on the default hours, and saves typed hours as a shift
     expect(substr((string) $shift?->start_time, 0, 5))->toBe('07:00')
         ->and(substr((string) $shift?->end_time, 0, 5))->toBe('16:00')
         ->and($shift?->grace_minutes)->toBe(5)
-        ->and($shift?->name)->toBe('Custom');
+        ->and($shift?->name)->toBe('7:00 AM – 4:00 PM');
 
     // Same hours on another record: the same shift, no duplicate.
     $other = employee();
@@ -42,7 +42,24 @@ it('starts a new employee on the default hours, and saves typed hours as a shift
         ->call('save')->assertHasNoErrors();
 
     expect($other->employeeProfile()->firstOrFail()->shift_id)->toBe($shift?->id)
-        ->and(Shift::query()->where('name', 'Custom')->count())->toBe(1);
+        ->and(Shift::query()->where('name', '7:00 AM – 4:00 PM')->count())->toBe(1);
+});
+
+it('adds a second employee with other typed hours (every new shift was "Custom" and the second crashed)', function () {
+    $hr = staff(Role::Hr);
+    // What the pilot had: an old "Custom" shift, then HR typed different hours.
+    Shift::query()->create(['name' => 'Custom', 'start_time' => '08:00', 'end_time' => '18:00', 'grace_minutes' => 5]);
+
+    foreach ([['Ana Reyes', '09:00', '18:00', '5'], ['Ben Cruz', '22:00', '07:00', '5'], ['Cora Diaz', '09:00', '18:00', '10']] as [$name, $start, $end, $grace]) {
+        Livewire::actingAs($hr)->test(Employees::class)->call('create')
+            ->set('form.hire_date', '2024-06-01')->set('form.birth_province', 'PAM')
+            ->set('form.name', $name)->set('form.email', str($name)->slug('.').'@example.test')
+            ->set('form.custom_start', $start)->set('form.custom_end', $end)->set('form.custom_grace', $grace)
+            ->call('save')->assertHasNoErrors();
+    }
+
+    expect(Shift::query()->orderBy('id')->pluck('name')->all())
+        ->toBe(['Custom', '9:00 AM – 6:00 PM', '10:00 PM – 7:00 AM', '9:00 AM – 6:00 PM · 10 min grace']);
 });
 
 it('opens a record on its current hours, and keeps its shift when they\'re unchanged', function () {

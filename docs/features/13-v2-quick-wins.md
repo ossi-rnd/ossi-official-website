@@ -9,7 +9,7 @@ Phase 2.0 of the [V2 roadmap](12-version-2-roadmap.md). It covers seven items pl
 | 10 Disclaimer | "Subject to change with prior notice…" under every payslip | `config('payroll.disclaimer')` |
 | 2 Screenshot deterrents | Viewer watermark, print blocked, content covered when the window loses focus, payslip views audited | `components/sensitive.blade.php`, `Actions/Payroll/RecordPayslipView` |
 | Foundation | Bell in the top bar, `notifications` table, scheduler | `Livewire/NotificationBell`, `routes/console.php` |
-| 15 Probation alert | HR gets a bell item and an email 30 days before and on the 6-month date, then **every week** while the person is still Probationary past it ("Probation ended 12 days ago", citing Art. 296: they're regular by law). An amber "Probation ended Apr 8" mark on the Employees list, and "3 already past 6 months" on HR's dashboard tile, until HR changes the status | `Actions/People/SendProbationAlerts`, `Queries/People/ProbationEndingQuery`, `config/hr.php` |
+| 15 Probation alert | HR and the head get a bell item and an email 30 days before and on the last day. Since 2026-10-24 the head evaluates and HR approves; with no approved decision, the daily check makes them Regular (Art. 296) instead of reminding weekly. See [35](35-probation-and-employment-status.md) | `Actions/People/SendProbationAlerts`, `ApplyProbationEnds`, `Support/ProbationRules` |
 | 39 Announcements | Admin, HR and Super Admin publish advisories; a banner for the audience, the bell, and email if urgent | `Livewire/Admin/Announcements`, `Actions/Content/*`, `components/announcement-banner` |
 | 35 FAQs | "Help & FAQs" for everyone; editors add, edit and hide questions in place | `Livewire/Help`, `Actions/Content/SaveFaq` |
 
@@ -102,5 +102,5 @@ Sign in as `hr@example.test`: the bell shows the alerts and the sidebar has Anno
 ## Tests
 
 - `tests/Feature/Content/AnnouncementsAndHelpTest.php`: audience targeting, notify-once, scheduled start, urgent mail channel, banner visibility, gate, bell links, FAQ drafts and XSS escaping.
-- `tests/Feature/People/ProbationAlertsTest.php`: 30-day and due-day alerts, once each, resigned HR skipped, non-candidates ignored. Also: the weekly overdue reminder (none in between, stops once regularized), a late first alert worded "ended 3 days ago", and the overdue marks on the list and dashboard.
+- `tests/Feature/People/ProbationAlertsTest.php`: 30-day and due-day alerts, once each, resigned HR skipped, non-candidates ignored. Also: past probation with no decision → Regular by law (once), the "ended 3 days ago" wording, and the overdue marks on the list and dashboard. The evaluation flow is in `ProbationEvaluationTest.php`.
 - `tests/Feature/Payroll/PayrollTest.php`: late-day list and disclaimer, payslip-view audit, watermark.

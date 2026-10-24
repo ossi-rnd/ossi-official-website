@@ -464,7 +464,7 @@ sequenceDiagram
         <span class="k">return</span> $this-&gt;claimEmployeeAccount-&gt;<span class="f">handle</span>($input[<span class="s">&#039;employee_number&#039;</span>], $input[<span class="s">&#039;email&#039;</span>], $input[<span class="s">&#039;password&#039;</span>]);
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Providers/FortifyServiceProvider.php<span class="lines">91 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Providers/FortifyServiceProvider.php<span class="lines">94 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Providers;
 
@@ -513,8 +513,11 @@ sequenceDiagram
             <span class="k">return</span> [
                 <span class="c">// One account: 5 tries a minute (guessing one person&#039;s password).</span>
                 Limit::<span class="f">perMinute</span>(<span class="n">5</span>)-&gt;<span class="f">by</span>($email.<span class="s">&#039;|&#039;</span>.$request-&gt;<span class="f">ip</span>()),
-                <span class="c">// One IP: 20 tries a minute across all emails (one password, many accounts).</span>
-                Limit::<span class="f">perMinute</span>(<span class="n">20</span>)-&gt;<span class="f">by</span>(<span class="s">&#039;ip|&#039;</span>.$request-&gt;<span class="f">ip</span>()),
+                <span class="c">// One IP: 60 tries a minute across all emails (one password, many accounts).</span>
+                <span class="c">// Not lower: Smart / Globe mobile data puts many phones behind one shared address,</span>
+                <span class="c">// and a site&#039;s guards may share one Wi-Fi, so a shift change signs in many at once</span>
+                <span class="c">// from one IP (20 blocked the 21st guard in the 5,000-guard load test, 2026-10-24).</span>
+                Limit::<span class="f">perMinute</span>(<span class="n">60</span>)-&gt;<span class="f">by</span>(<span class="s">&#039;ip|&#039;</span>.$request-&gt;<span class="f">ip</span>()),
             ];
         });
 
@@ -563,6 +566,7 @@ sequenceDiagram
     <tr><td>Why lock the profile row?</td><td>Two people submitting the same employee number at the same moment could both pass the "unclaimed" check without it.</td></tr>
     <tr><td>Why doesn't the form ask for a name?</td><td>HR's record is the source of truth. The account takes the name HR typed.</td></tr>
     <tr><td>Why a rate limiter in <code>CreateNewUser</code>?</td><td>Fortify's register route has none, and this form checks an identifier, so it could be used to guess employee numbers.</td></tr>
+    <tr><td>Why allow 60 sign-ins a minute from one address, and not fewer?</td><td>Smart and Globe mobile data put many phones behind one shared public address, and a site's guards may share one Wi-Fi. At 20, the 21st guard at a shift change was told "Too many attempts" (found in the payday load test). The limit of 5 a minute per account still stops anyone guessing one person's password; the per-address limit only has to stop one password being tried on many accounts.</td></tr>
     <tr><td>Why queue the verification email?</td><td>Gmail's SMTP handshake can take seconds. Queued, the request returns at once; <code>composer dev</code> runs the worker locally.</td></tr>
   </table></div>
   <div class="try"><b>Try it</b><ol><li>Open <code>/register</code>, enter <code>999999-XXX-9999</code> with any email. Note the message.</li><li>Sign in as the super admin and open Audit Log: find <code>registration.failed</code> with reason <code>unknown_employee_number</code>.</li><li>Register with <code>250115-SEC-3001</code> / <code>juan.delacruz@example.test</code>: you land on "Confirm your email".</li></ol></div>
@@ -1768,7 +1772,7 @@ sequenceDiagram
 <section class="chapter" id="people">
   <div class="chapter-head"><span class="no">05</span><h2>People: employees, shifts, holidays</h2></div>
   <p class="lead">The employee profile is HR's record, and it exists before the login account does (<code>user_id</code> is nullable). That is the hinge of the registration rule. Government IDs and medical notes use Laravel's <code>encrypted</code> cast, and the profile carries explicit <code>is_office_staff</code> and <code>is_night_shift</code> flags for payroll.</p>
-  <details class="file" open><summary>app/Models/EmployeeProfile.php<span class="lines">385 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file" open><summary>app/Models/EmployeeProfile.php<span class="lines">395 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Models;
 
@@ -1779,6 +1783,7 @@ sequenceDiagram
 <span class="k">use</span> App\Enums\Requirement;
 <span class="k">use</span> App\Enums\Role;
 <span class="k">use</span> App\Support\EmployeeNumber;
+<span class="k">use</span> App\Support\ProbationRules;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Database\Factories\EmployeeProfileFactory;
 <span class="k">use</span> Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -2017,7 +2022,8 @@ sequenceDiagram
     <span class="c">/**
      * When probation ended, for someone still marked Probationary past it; null
      * otherwise. Labor Code Art. 296: allowed to keep working, they&#039;re regular by
-     * law, so the Employees list and HR&#039;s dashboard flag it until HR decides.
+     * law. The daily ApplyProbationEnds makes it so; until it runs, the Employees
+     * list and HR&#039;s dashboard flag it.
      */</span>
     <span class="k">public</span> <span class="k">function</span> <span class="f">probationOverdueSince</span>(): ?CarbonImmutable
     {
@@ -2025,9 +2031,9 @@ sequenceDiagram
             <span class="k">return</span> <span class="k">null</span>;
         }
 
-        $endsOn = CarbonImmutable::<span class="f">parse</span>($this-&gt;hire_date)-&gt;<span class="f">addMonthsNoOverflow</span>((int) <span class="f">config</span>(<span class="s">&#039;hr.probation.months&#039;</span>));
+        $endsOn = ProbationRules::<span class="f">endsOn</span>($this);
 
-        <span class="k">return</span> $endsOn-&gt;<span class="f">isBefore</span>(CarbonImmutable::<span class="f">today</span>()) ? $endsOn : <span class="k">null</span>;
+        <span class="k">return</span> $endsOn?-&gt;<span class="f">isBefore</span>(CarbonImmutable::<span class="f">today</span>()) ? $endsOn : <span class="k">null</span>;
     }
 
     <span class="c">/**
@@ -2039,7 +2045,7 @@ sequenceDiagram
     {
         $query-&gt;<span class="f">where</span>(<span class="s">&#039;employment_status&#039;</span>, EmploymentStatus::Probationary)
             -&gt;<span class="f">whereNotNull</span>(<span class="s">&#039;hire_date&#039;</span>)
-            -&gt;<span class="f">whereDate</span>(<span class="s">&#039;hire_date&#039;</span>, <span class="s">&#039;&lt;&#039;</span>, CarbonImmutable::<span class="f">today</span>()-&gt;<span class="f">subMonthsNoOverflow</span>((int) <span class="f">config</span>(<span class="s">&#039;hr.probation.months&#039;</span>))-&gt;<span class="f">toDateString</span>());
+            -&gt;<span class="f">whereDate</span>(<span class="s">&#039;hire_date&#039;</span>, <span class="s">&#039;&lt;&#039;</span>, CarbonImmutable::<span class="f">today</span>()-&gt;<span class="f">subMonthsNoOverflow</span>(ProbationRules::<span class="f">months</span>())-&gt;<span class="f">toDateString</span>());
     }
 
     <span class="c">/**
@@ -2080,6 +2086,14 @@ sequenceDiagram
     <span class="k">public</span> <span class="k">function</span> <span class="f">rates</span>(): HasMany
     {
         <span class="k">return</span> $this-&gt;<span class="f">hasMany</span>(EmployeeRate::<span class="k">class</span>);
+    }
+
+    <span class="c">/**
+     * @return HasMany&lt;ProbationEvaluation, $this&gt;
+     */</span>
+    <span class="k">public</span> <span class="k">function</span> <span class="f">probationEvaluations</span>(): HasMany
+    {
+        <span class="k">return</span> $this-&gt;<span class="f">hasMany</span>(ProbationEvaluation::<span class="k">class</span>);
     }
 
     <span class="c">/**
@@ -2153,7 +2167,7 @@ sequenceDiagram
         <span class="k">return</span> Requirement::<span class="k">for</span>($this-&gt;is_office_staff);
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Livewire/Forms/EmployeeProfileForm.php<span class="lines">513 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Livewire/Forms/EmployeeProfileForm.php<span class="lines">529 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Livewire\Forms;
 
@@ -2338,6 +2352,22 @@ sequenceDiagram
     }
 
     <span class="c">/**
+     * The statuses HR can pick. Resigned and Terminated aren&#039;t picked: they come from the
+     * resignation flow, a Notice to Explain decided as dismissal, or a failed probation
+     * (owner, 2026-10-24). A record already Resigned or Terminated keeps that status listed,
+     * read from the database (never from the browser), so it can still be saved.
+     *
+     * @return list&lt;EmploymentStatus&gt;
+     */</span>
+    <span class="k">public</span> <span class="k">function</span> <span class="f">statusChoices</span>(): array
+    {
+        $current = $this-&gt;profileId === <span class="k">null</span> ? <span class="k">null</span> : EmployeeProfile::<span class="f">query</span>()-&gt;<span class="f">whereKey</span>($this-&gt;profileId)-&gt;<span class="f">value</span>(<span class="s">&#039;employment_status&#039;</span>);
+        $current = $current instanceof EmploymentStatus ? $current : EmploymentStatus::<span class="f">tryFrom</span>((string) $current);
+
+        <span class="k">return</span> $current !== <span class="k">null</span> &amp;&amp; ! $current-&gt;<span class="f">isActive</span>() ? [...EmploymentStatus::<span class="f">active</span>(), $current] : EmploymentStatus::<span class="f">active</span>();
+    }
+
+    <span class="c">/**
      * @return array&lt;string, mixed&gt;
      */</span>
     <span class="k">protected</span> <span class="k">function</span> <span class="f">rules</span>(): array
@@ -2372,7 +2402,7 @@ sequenceDiagram
             <span class="s">&#039;position&#039;</span> =&gt; [<span class="s">&#039;nullable&#039;</span>, Rule::<span class="f">in</span>(<span class="f">array_map</span>(<span class="k">fn</span> (Position $position) =&gt; $position-&gt;value, Position::<span class="k">for</span>($this-&gt;is_office_staff)))],
             <span class="c">// The number is made from these two.</span>
             <span class="s">&#039;hire_date&#039;</span> =&gt; $this-&gt;numberSource === self::GENERATE ? [<span class="s">&#039;required&#039;</span>, <span class="s">&#039;date&#039;</span>] : [<span class="s">&#039;nullable&#039;</span>, <span class="s">&#039;date&#039;</span>],
-            <span class="s">&#039;employment_status&#039;</span> =&gt; [<span class="s">&#039;required&#039;</span>, Rule::<span class="k">enum</span>(EmploymentStatus::<span class="k">class</span>)],
+            <span class="s">&#039;employment_status&#039;</span> =&gt; [<span class="s">&#039;required&#039;</span>, Rule::<span class="f">in</span>(<span class="f">array_map</span>(<span class="k">fn</span> (EmploymentStatus $status) =&gt; $status-&gt;value, $this-&gt;<span class="f">statusChoices</span>()))],
             <span class="c">// A listed shift, or &quot;custom&quot; with the times typed below.</span>
             <span class="s">&#039;shift_id&#039;</span> =&gt; [<span class="s">&#039;nullable&#039;</span>, <span class="k">function</span> (string $attribute, mixed $value, \Closure $fail) {
                 <span class="k">if</span> ($value !== self::CUSTOM_SHIFT &amp;&amp; ! Shift::<span class="f">query</span>()-&gt;<span class="f">whereKey</span>((int) $value)-&gt;<span class="f">exists</span>()) {
@@ -3431,11 +3461,12 @@ flowchart LR
 }</code></pre></details>
   <h3>The roster: one search, tabs by kind</h3>
   <p>Employees keeps <b>one search box</b> for everyone (name, email or employee number), because people search by name without knowing which side someone works on. Tabs under the header, <b>All · Guards · Office staff</b>, narrow it, each with a count that follows the search and the other filters, and the tab is kept in the URL (<code>?kind=office</code>). The list and the counts share one private query, <code>filtered()</code>, so they can't disagree. Only viewers with <code>view-office-staff</code> get the tabs. <b>Operations</b> sees guards only, as on the dashboard, and <code>?kind=office</code> changes nothing for them. The <b>Assignment</b> column shows a guard's detachment · post and an office employee's position (<code>rosterAssignmentLabel()</code>).</p>
-  <details class="file"><summary>app/Livewire/Admin/Employees.php<span class="lines">204 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Livewire/Admin/Employees.php<span class="lines">245 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Livewire\Admin;
 
 <span class="k">use</span> App\Actions\People\AddEmployee;
+<span class="k">use</span> App\Actions\People\SaveProbationRules;
 <span class="k">use</span> App\Actions\People\ShiftForTimes;
 <span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\EmploymentStatus;
@@ -3447,6 +3478,7 @@ flowchart LR
 <span class="k">use</span> App\Models\EmployeeProfile;
 <span class="k">use</span> App\Models\Shift;
 <span class="k">use</span> App\Queries\People\MeritTotalsQuery;
+<span class="k">use</span> App\Support\ProbationRules;
 <span class="k">use</span> Illuminate\Contracts\Pagination\LengthAwarePaginator;
 <span class="k">use</span> Illuminate\Contracts\View\View;
 <span class="k">use</span> Illuminate\Database\Eloquent\Builder;
@@ -3506,6 +3538,45 @@ flowchart LR
         $count = <span class="k">fn</span> (?bool $office) =&gt; $this-&gt;<span class="f">filtered</span>()-&gt;<span class="f">when</span>($office !== <span class="k">null</span>, <span class="k">fn</span> ($query) =&gt; $query-&gt;<span class="f">where</span>(<span class="s">&#039;is_office_staff&#039;</span>, $office))-&gt;<span class="f">count</span>();
 
         <span class="k">return</span> [<span class="s">&#039;all&#039;</span> =&gt; $<span class="f">count</span>(<span class="k">null</span>), <span class="s">&#039;field&#039;</span> =&gt; $<span class="f">count</span>(<span class="k">false</span>), <span class="s">&#039;office&#039;</span> =&gt; $<span class="f">count</span>(<span class="k">true</span>)];
+    }
+
+    <span class="c">// Probation &amp; training rules: HR sets them (SaveProbationRules, audited).</span>
+    <span class="k">public</span> bool $editingRules = <span class="k">false</span>;
+
+    <span class="k">public</span> string $probationMonths = <span class="s">&#039;&#039;</span>;
+
+    <span class="k">public</span> string $remindDaysBefore = <span class="s">&#039;&#039;</span>;
+
+    <span class="k">public</span> string $trainingDays = <span class="s">&#039;&#039;</span>;
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">canEditRules</span>(): bool
+    {
+        <span class="k">return</span> $this-&gt;<span class="f">currentUser</span>()-&gt;<span class="f">can</span>(Ability::ManagePeople-&gt;value);
+    }
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">editRules</span>(): void
+    {
+        <span class="f">abort_unless</span>($this-&gt;<span class="f">canEditRules</span>(), <span class="n">403</span>);
+
+        $this-&gt;probationMonths = (string) ProbationRules::<span class="f">months</span>();
+        $this-&gt;remindDaysBefore = (string) ProbationRules::<span class="f">remindDaysBefore</span>();
+        $this-&gt;trainingDays = (string) ProbationRules::<span class="f">trainingDays</span>();
+        $this-&gt;<span class="f">resetErrorBag</span>();
+        $this-&gt;editingRules = <span class="k">true</span>;
+    }
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">saveRules</span>(SaveProbationRules $save): void
+    {
+        $validated = $this-&gt;<span class="f">validate</span>([
+            <span class="s">&#039;probationMonths&#039;</span> =&gt; [<span class="s">&#039;required&#039;</span>, <span class="s">&#039;integer&#039;</span>, <span class="s">&#039;min:1&#039;</span>, <span class="s">&#039;max:&#039;</span>.ProbationRules::MAX_MONTHS],
+            <span class="s">&#039;remindDaysBefore&#039;</span> =&gt; [<span class="s">&#039;required&#039;</span>, <span class="s">&#039;integer&#039;</span>, <span class="s">&#039;min:7&#039;</span>, <span class="s">&#039;max:60&#039;</span>],
+            <span class="s">&#039;trainingDays&#039;</span> =&gt; [<span class="s">&#039;required&#039;</span>, <span class="s">&#039;integer&#039;</span>, <span class="s">&#039;min:1&#039;</span>, <span class="s">&#039;max:180&#039;</span>],
+        ], [<span class="s">&#039;probationMonths.max&#039;</span> =&gt; <span class="s">&#039;The law allows no more than 6 months.&#039;</span>], [<span class="s">&#039;probationMonths&#039;</span> =&gt; <span class="s">&#039;probation length&#039;</span>, <span class="s">&#039;remindDaysBefore&#039;</span> =&gt; <span class="s">&#039;days before&#039;</span>, <span class="s">&#039;trainingDays&#039;</span> =&gt; <span class="s">&#039;training length&#039;</span>]);
+
+        $save-&gt;<span class="f">handle</span>($this-&gt;<span class="f">currentUser</span>(), (int) $validated[<span class="s">&#039;probationMonths&#039;</span>], (int) $validated[<span class="s">&#039;remindDaysBefore&#039;</span>], (int) $validated[<span class="s">&#039;trainingDays&#039;</span>]);
+
+        $this-&gt;editingRules = <span class="k">false</span>;
+        $this-&gt;<span class="f">dispatch</span>(<span class="s">&#039;notify&#039;</span>, message: <span class="s">&#039;Probation and training rules saved.&#039;</span>);
     }
 
     <span class="k">public</span> bool $showForm = <span class="k">false</span>;
@@ -6310,6 +6381,173 @@ flowchart LR
     <span class="s">&#039;disclaimer&#039;</span> =&gt; <span class="s">&#039;Payroll figures are subject to change with prior notice. Any adjustment will be reflected in the next payroll.&#039;</span>,
 
 ];</code></pre></details>
+  <h3>Printed payslips with a QR code</h3>
+  <p>A payslip handed to a bank or a lender can be retyped with a bigger net pay. So the printed payslip (<b>Print</b> on My Payslips, <b>Print payslip</b> in the Payroll window) carries a QR code and a short code like <code>9CKP-JWQA-C110-G6HM</code>. The code is an <b>HMAC</b>: a fingerprint of the payslip's id, employee, run, gross, deductions and net, made with the app's secret key (<code>APP_KEY</code>). Without the key nobody can make a code that matches. Scanning it opens <code>/verify/payslip/{id}/{code}</code>, which needs no sign-in and shows <b>Verified</b> with just the name, period and totals. The reader compares them with the paper. If the database figures were changed, the code no longer matches and the page says <b>Not verified</b>.</p>
+  <p>Why a separate page? The on-screen payslip is wrapped in <code>x-sensitive</code>, which blanks it when printed, so paper comes from a page made for it, and every print is audited. Only a <b>generated</b> payslip is official. An estimate prints "NOT AN OFFICIAL PAYSLIP" and has no code, because its figures can still change. A period with no attendance has no payslip at all, so it has no Print link either.</p>
+  <details class="file" open><summary>app/Support/PayslipVerification.php<span class="lines">85 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Support;
+
+<span class="k">use</span> App\Models\PayslipRecord;
+<span class="k">use</span> BaconQrCode\Renderer\Image\SvgImageBackEnd;
+<span class="k">use</span> BaconQrCode\Renderer\ImageRenderer;
+<span class="k">use</span> BaconQrCode\Renderer\RendererStyle\RendererStyle;
+<span class="k">use</span> BaconQrCode\Writer;
+
+<span class="c">/**
+ * The QR code and short code on a printed payslip, so anyone holding the paper (a bank, a landlord)
+ * can confirm it came from this system and wasn&#039;t changed.
+ *
+ * The code is an HMAC with the app&#039;s secret key over the payslip&#039;s identity and its totals (gross,
+ * deductions, net). It can&#039;t be made up without the key, and if the payslip&#039;s figures differ from
+ * the ones signed, it no longer verifies. Only a GENERATED (frozen) payslip gets one; an estimate
+ * prints as &quot;not an official payslip&quot;.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> PayslipVerification
+{
+    <span class="c">/** &quot;7KQ2-M9XD-4RTA-PW3C&quot;: 16 characters, easy to read out or type. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">code</span>(PayslipRecord $payslip): string
+    {
+        $mac = <span class="f">hash_hmac</span>(<span class="s">&#039;sha256&#039;</span>, self::<span class="f">signed</span>($payslip), (string) <span class="f">config</span>(<span class="s">&#039;app.key&#039;</span>), <span class="k">true</span>);
+
+        <span class="c">// Crockford-style base 32 (no I, L, O, U): unambiguous on paper.</span>
+        $alphabet = <span class="s">&#039;0123456789ABCDEFGHJKMNPQRSTVWXYZ&#039;</span>;
+        <span class="c">// 10 bytes = 80 bits = 16 characters of 5 bits each.</span>
+        $code = <span class="s">&#039;&#039;</span>;
+        $buffer = <span class="n">0</span>;
+        $bits = <span class="n">0</span>;
+        <span class="k">foreach</span> (<span class="f">str_split</span>(<span class="f">substr</span>($mac, <span class="n">0</span>, <span class="n">10</span>)) <span class="k">as</span> $byte) {
+            $buffer = ($buffer &lt;&lt; <span class="n">8</span>) | <span class="f">ord</span>($byte);
+            $bits += <span class="n">8</span>;
+            <span class="k">while</span> ($bits &gt;= <span class="n">5</span>) {
+                $bits -= <span class="n">5</span>;
+                $code .= $alphabet[($buffer &gt;&gt; $bits) &amp; <span class="n">31</span>];
+            }
+            $buffer &amp;= (<span class="n">1</span> &lt;&lt; $bits) - <span class="n">1</span>;
+        }
+
+        <span class="k">return</span> <span class="f">implode</span>(<span class="s">&#039;-&#039;</span>, <span class="f">str_split</span>($code, <span class="n">4</span>));
+    }
+
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">url</span>(PayslipRecord $payslip): string
+    {
+        <span class="k">return</span> <span class="f">route</span>(<span class="s">&#039;payslip.verify&#039;</span>, [<span class="s">&#039;payslip&#039;</span> =&gt; $payslip-&gt;id, <span class="s">&#039;code&#039;</span> =&gt; self::<span class="f">code</span>($payslip)]);
+    }
+
+    <span class="c">/** The payslip this code was made for, if it still matches; null for a forged or edited code. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">find</span>(int $payslipId, string $code): ?PayslipRecord
+    {
+        $payslip = PayslipRecord::<span class="f">query</span>()-&gt;<span class="f">with</span>([<span class="s">&#039;user.employeeProfile&#039;</span>, <span class="s">&#039;payrollRun&#039;</span>])-&gt;<span class="f">find</span>($payslipId);
+        $given = <span class="f">strtoupper</span>(<span class="f">preg_replace</span>(<span class="s">&#039;/[^0-9A-Za-z]/&#039;</span>, <span class="s">&#039;&#039;</span>, $code) ?? <span class="s">&#039;&#039;</span>);
+
+        <span class="k">if</span> ($payslip === <span class="k">null</span> || $given === <span class="s">&#039;&#039;</span>) {
+            <span class="k">return</span> <span class="k">null</span>;
+        }
+
+        <span class="k">return</span> <span class="f">hash_equals</span>(<span class="f">str_replace</span>(<span class="s">&#039;-&#039;</span>, <span class="s">&#039;&#039;</span>, self::<span class="f">code</span>($payslip)), $given) ? $payslip : <span class="k">null</span>;
+    }
+
+    <span class="c">/** The QR code for the verification link, as inline SVG. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">qrSvg</span>(PayslipRecord $payslip, int $size = <span class="n">132</span>): string
+    {
+        $writer = <span class="k">new</span> <span class="f">Writer</span>(<span class="k">new</span> <span class="f">ImageRenderer</span>(<span class="k">new</span> <span class="f">RendererStyle</span>($size, <span class="n">1</span>), <span class="k">new</span> SvgImageBackEnd));
+
+        <span class="k">return</span> $writer-&gt;<span class="f">writeString</span>(self::<span class="f">url</span>($payslip));
+    }
+
+    <span class="c">/** What the code vouches for: which payslip, whose, which run, and its totals. */</span>
+    <span class="k">private</span> <span class="k">static</span> <span class="k">function</span> <span class="f">signed</span>(PayslipRecord $payslip): string
+    {
+        <span class="k">return</span> <span class="f">implode</span>(<span class="s">&#039;|&#039;</span>, [
+            <span class="s">&#039;ossi-payslip-v1&#039;</span>,
+            $payslip-&gt;id,
+            $payslip-&gt;user_id,
+            $payslip-&gt;payroll_run_id,
+            <span class="f">number_format</span>((float) $payslip-&gt;gross_pay, <span class="n">2</span>, <span class="s">&#039;.&#039;</span>, <span class="s">&#039;&#039;</span>),
+            <span class="f">number_format</span>((float) $payslip-&gt;total_deductions, <span class="n">2</span>, <span class="s">&#039;.&#039;</span>, <span class="s">&#039;&#039;</span>),
+            <span class="f">number_format</span>((float) $payslip-&gt;net_pay, <span class="n">2</span>, <span class="s">&#039;.&#039;</span>, <span class="s">&#039;&#039;</span>),
+        ]);
+    }
+}</code></pre></details>
+  <details class="file"><summary>app/Http/Controllers/PrintPayslipController.php<span class="lines">54 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Http\Controllers;
+
+<span class="k">use</span> App\Enums\Ability;
+<span class="k">use</span> App\Enums\AuditArea;
+<span class="k">use</span> App\Enums\PayrollRunStatus;
+<span class="k">use</span> App\Models\PayrollRun;
+<span class="k">use</span> App\Models\PayslipRecord;
+<span class="k">use</span> App\Models\User;
+<span class="k">use</span> App\Queries\Payroll\ResolvePayslips;
+<span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\PayslipVerification;
+<span class="k">use</span> Illuminate\Contracts\View\View;
+<span class="k">use</span> Illuminate\Http\Request;
+
+<span class="c">/**
+ * The official, printable payslip: for the employee themselves, or payroll (manage-payroll).
+ * The on-screen payslip blanks itself when printed (x-sensitive); this page is the one meant for
+ * paper, so every print is audited instead. A generated payslip carries a QR code and a short code
+ * anyone can check on the verification page; an estimate is marked &quot;not an official payslip&quot;.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> PrintPayslipController <span class="k">extends</span> Controller
+{
+    <span class="k">public</span> <span class="k">function</span> <span class="f">__invoke</span>(Request $request, PayrollRun $run, User $user, ResolvePayslips $payslips, AuditLogger $audit): View
+    {
+        <span class="c">/** @var User $viewer */</span>
+        $viewer = $request-&gt;<span class="f">user</span>();
+        $own = $viewer-&gt;<span class="f">is</span>($user);
+
+        <span class="f">abort_unless</span>($own || $viewer-&gt;<span class="f">can</span>(Ability::ManagePayroll-&gt;value), <span class="n">403</span>);
+        <span class="c">// An employee sees a run only once it&#039;s past Draft, as on My Payslips.</span>
+        <span class="f">abort_if</span>($own &amp;&amp; ! $viewer-&gt;<span class="f">can</span>(Ability::ManagePayroll-&gt;value) &amp;&amp; $run-&gt;status === PayrollRunStatus::Draft, <span class="n">404</span>);
+
+        $user-&gt;<span class="f">loadMissing</span>(<span class="s">&#039;employeeProfile&#039;</span>);
+        $breakdown = $payslips-&gt;<span class="f">forUser</span>($run, $user);
+        <span class="c">// No attendance and nothing generated: there is no payslip to print (as on screen).</span>
+        <span class="f">abort_if</span>(! $breakdown-&gt;isGenerated &amp;&amp; $breakdown-&gt;daysWorked === <span class="n">0</span>, <span class="n">404</span>);
+        $record = PayslipRecord::<span class="f">query</span>()-&gt;<span class="f">where</span>(<span class="s">&#039;payroll_run_id&#039;</span>, $run-&gt;id)-&gt;<span class="f">where</span>(<span class="s">&#039;user_id&#039;</span>, $user-&gt;id)-&gt;<span class="f">first</span>();
+
+        $audit-&gt;<span class="f">record</span>(AuditArea::Payroll, <span class="s">&#039;payslip.printed&#039;</span>, ($own ? <span class="s">&#039;Printed their own payslip&#039;</span> : <span class="s">&quot;Printed {$user-&gt;name}&#039;s payslip&quot;</span>).<span class="s">&quot; for {$run-&gt;periodLabel()}&quot;</span>, $record ?? $run, causer: $viewer);
+
+        <span class="k">return</span> <span class="f">view</span>(<span class="s">&#039;payslips.print&#039;</span>, [
+            <span class="s">&#039;run&#039;</span> =&gt; $run,
+            <span class="s">&#039;employee&#039;</span> =&gt; $user,
+            <span class="s">&#039;payslip&#039;</span> =&gt; $breakdown,
+            <span class="s">&#039;record&#039;</span> =&gt; $record,
+            <span class="s">&#039;code&#039;</span> =&gt; $record ? PayslipVerification::<span class="f">code</span>($record) : <span class="k">null</span>,
+            <span class="s">&#039;verifyUrl&#039;</span> =&gt; $record ? PayslipVerification::<span class="f">url</span>($record) : <span class="k">null</span>,
+            <span class="s">&#039;qr&#039;</span> =&gt; $record ? PayslipVerification::<span class="f">qrSvg</span>($record) : <span class="k">null</span>,
+            <span class="s">&#039;printedBy&#039;</span> =&gt; $viewer,
+        ]);
+    }
+}</code></pre></details>
+  <details class="file"><summary>app/Http/Controllers/VerifyPayslipController.php<span class="lines">25 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Http\Controllers;
+
+<span class="k">use</span> App\Support\PayslipVerification;
+<span class="k">use</span> Illuminate\Http\Response;
+
+<span class="c">/**
+ * Where a printed payslip&#039;s QR code leads, without signing in: confirms it came from this system
+ * and shows its essentials (who, which period, gross, deductions, net) to compare with the paper.
+ * No government IDs and no line-by-line detail. A made-up or altered code finds nothing.
+ * Not indexed by search engines; rate-limited by the route.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> VerifyPayslipController <span class="k">extends</span> Controller
+{
+    <span class="k">public</span> <span class="k">function</span> <span class="f">__invoke</span>(int $payslip, string $code): Response
+    {
+        $record = PayslipVerification::<span class="f">find</span>($payslip, $code);
+
+        <span class="k">return</span> <span class="f">response</span>()
+            -&gt;<span class="f">view</span>(<span class="s">&#039;payslips.verify&#039;</span>, [<span class="s">&#039;record&#039;</span> =&gt; $record, <span class="s">&#039;code&#039;</span> =&gt; <span class="f">strtoupper</span>($code)], $record ? <span class="n">200</span> : <span class="n">404</span>)
+            -&gt;<span class="f">header</span>(<span class="s">&#039;X-Robots-Tag&#039;</span>, <span class="s">&#039;noindex, nofollow&#039;</span>)
+            -&gt;<span class="f">header</span>(<span class="s">&#039;Cache-Control&#039;</span>, <span class="s">&#039;no-store&#039;</span>);
+    }
+}</code></pre></details>
   <div class="table-wrap"><table class="qa">
     <tr><th>Question you'd ask</th><th>Answer</th></tr>
     <tr><td>Why look rates up by the run's start date?</td><td>So reopening a past run gives the figures it was paid with. To change a rate, add a dated entry; never edit an old one.</td></tr>
@@ -9055,36 +9293,361 @@ flowchart LR
     <tr><th>When</th><th>Alert name (claimed once)</th><th>Title</th></tr>
     <tr><td>30 days before</td><td><code>probation.upcoming</code></td><td>Probation ending soon: Name</td></tr>
     <tr><td>On the day, or within a week of it</td><td><code>probation.due</code></td><td>Probation ends today, or "ended 3 days ago" if the scheduler was late</td></tr>
-    <tr><td>Every 7 days after, while still Probationary</td><td><code>probation.overdue.1</code>, <code>.2</code>, …</td><td>Probation ended 14 days ago: Name (cites Art. 296)</td></tr>
+    <tr><td>Every 7 days after, while still Probationary</td><td><code>probation.overdue.1</code>, <code>.2</code>, …</td><td>Only if the daily close didn't run (since 2026-10-24 it makes them Regular)</td></tr>
   </table>
   <div class="why">
-    <div><b>Weekly without a "last sent" date</b><span>Each alert name can be claimed once, so the week number goes into the name: <code>'probation.overdue.'.intdiv($daysPast, 7)</code>. Daily runs in between find it already claimed; a new week is a new name.</span></div>
-    <div><b>Why keep reminding</b><span>Labor Code Art. 296: someone allowed to keep working after probation becomes regular by law, whatever the record says. So until HR decides, the reminder comes back weekly, an amber "Probation ended Apr 8" mark shows on the Employees list (<code>EmployeeProfile::probationOverdueSince()</code>), and HR's dashboard tile says "3 already past 6 months" (<code>scopeProbationOverdue</code>).</span></div>
+    <div><b>Weekly without a "last sent" date</b><span>Each alert name can be claimed once, so the week number goes into the name: <code>'probation.overdue.'.intdiv($daysPast, 7)</code>. Daily runs in between find it already claimed; a new week is a new name. Trainee alerts (<code>training.overdue.N</code>) use the same trick.</span></div>
+    <div><b>Why not just keep reminding</b><span>Labor Code Art. 296: someone allowed to keep working after probation becomes regular by law, whatever the record says. A record that says "Probationary" for months is simply wrong. So since 2026-10-24 the system makes the record match the law the day after probation ends, unless a failed evaluation was approved in time.</span></div>
   </div>
-  <details class="file" open><summary>app/Actions/People/SendProbationAlerts.php<span class="lines">86 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+  <h3>The probation decision: the head evaluates, HR approves</h3>
+  <p>The owner's choice (2026-10-24). On the employee page, the <b>Probation</b> card shows the last day. The employee's head (from <code>Heads</code>: Operations for a guard) clicks <b>Evaluate</b> and records <b>Pass</b> or <b>Doesn't meet the standards</b>, with reasons. HR approves or sends it back; when HR evaluates, it counts as approved.</p>
+  <table>
+    <tr><th>Outcome</th><th>What happens</th></tr>
+    <tr><td>Pass, approved</td><td>Regular at once; the employee gets a bell and an email.</td></tr>
+    <tr><td>Fail, approved (only up to the last day)</td><td>The employee gets the written notice now, with the reasons. The daily <code>ApplyProbationEnds</code> makes them Terminated the day after the last day.</td></tr>
+    <tr><td>Nothing approved by the last day</td><td><code>ApplyProbationEnds</code> makes them Regular by law and closes a waiting evaluation. The employee and HR are told.</td></tr>
+  </table>
+  <p>HR sets the lengths on Employees → <b>Probation &amp; training rules</b> (<code>ProbationRules</code>): probation 1–6 months, never more than the law. <b>Training counts toward probation:</b> Art. 296 counts from the first day of work, and paid on-the-job training is work, so both run from the hire date. If that's wrong, someone becomes Regular a little early; the other way round, a "failed" month-7 probation would be an illegal dismissal. Resigned and Terminated are no longer on the status list. They come only from a resignation, a Notice to Explain decided as dismissal (which now sets Terminated itself), or a failed probation.</p>
+  <details class="file" open><summary>app/Actions/People/EvaluateProbation.php<span class="lines">89 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\People;
 
 <span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\AuditArea;
+<span class="k">use</span> App\Models\EmployeeProfile;
+<span class="k">use</span> App\Models\ProbationEvaluation;
+<span class="k">use</span> App\Models\User;
+<span class="k">use</span> App\Notifications\UpdateNotice;
+<span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\ProbationRules;
+<span class="k">use</span> Carbon\CarbonImmutable;
+<span class="k">use</span> Illuminate\Auth\Access\AuthorizationException;
+<span class="k">use</span> Illuminate\Support\Facades\DB;
+<span class="k">use</span> Illuminate\Validation\ValidationException;
+
+<span class="c">/**
+ * The head&#039;s probation evaluation (owner, 2026-10-24: the head evaluates, HR approves).
+ * Pass, or doesn&#039;t meet the standards made known when hired (Labor Code Art. 296), with the
+ * reasons. HR is told to approve it. When HR evaluates, it counts as approved at once.
+ * Only before the probation&#039;s last day has passed: after it, the law already made them Regular.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> EvaluateProbation
+{
+    <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(
+        <span class="k">private</span> <span class="k">readonly</span> DecideProbationEvaluation $decide,
+        <span class="k">private</span> <span class="k">readonly</span> AuditLogger $audit,
+    ) {}
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">handle</span>(User $actor, EmployeeProfile $profile, string $outcome, string $reason): ProbationEvaluation
+    {
+        <span class="k">if</span> (! ProbationEvaluation::<span class="f">canEvaluate</span>($actor, $profile)) {
+            <span class="k">throw</span> <span class="k">new</span> AuthorizationException;
+        }
+
+        $reason = <span class="f">trim</span>($reason);
+        $endsOn = ProbationRules::<span class="f">endsOn</span>($profile);
+        $errors = <span class="f">array_filter</span>([
+            <span class="s">&#039;evaluationOutcome&#039;</span> =&gt; ! <span class="f">in_array</span>($outcome, [ProbationEvaluation::PASS, ProbationEvaluation::FAIL], <span class="k">true</span>) ? <span class="s">&#039;Choose pass, or doesn\&#039;t meet the standards.&#039;</span> : <span class="k">null</span>,
+            <span class="s">&#039;evaluationReason&#039;</span> =&gt; <span class="k">match</span> (<span class="k">true</span>) {
+                $outcome === ProbationEvaluation::FAIL &amp;&amp; <span class="f">mb_strlen</span>($reason) &lt; <span class="n">30</span> =&gt; <span class="s">&#039;Say which standards weren\&#039;t met, and how (a few sentences). The employee receives this in writing.&#039;</span>,
+                <span class="f">mb_strlen</span>($reason) &lt; <span class="n">10</span> =&gt; <span class="s">&#039;A short note on how they did.&#039;</span>,
+                <span class="f">mb_strlen</span>($reason) &gt; <span class="n">2000</span> =&gt; <span class="s">&#039;Keep it under 2,000 characters.&#039;</span>,
+                <span class="k">default</span> =&gt; <span class="k">null</span>,
+            },
+            <span class="s">&#039;evaluation&#039;</span> =&gt; <span class="k">match</span> (<span class="k">true</span>) {
+                $endsOn === <span class="k">null</span> =&gt; <span class="s">&#039;Their hire date is missing, so the probation\&#039;s end is unknown. HR adds it first.&#039;</span>,
+                $endsOn-&gt;<span class="f">isBefore</span>(CarbonImmutable::<span class="f">today</span>()) =&gt; <span class="s">&#039;Probation ended on &#039;</span>.$endsOn-&gt;<span class="f">format</span>(<span class="s">&#039;M j, Y&#039;</span>).<span class="s">&#039;: under the law they are already Regular.&#039;</span>,
+                $profile-&gt;<span class="f">probationEvaluations</span>()-&gt;<span class="f">whereIn</span>(<span class="s">&#039;status&#039;</span>, [ProbationEvaluation::PENDING, ProbationEvaluation::APPROVED])-&gt;<span class="f">exists</span>() =&gt; <span class="s">&#039;An evaluation is already waiting for HR, or was approved.&#039;</span>,
+                <span class="k">default</span> =&gt; <span class="k">null</span>,
+            },
+        ]);
+
+        <span class="k">if</span> ($errors !== []) {
+            <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>($errors);
+        }
+
+        $evaluation = DB::<span class="f">transaction</span>(<span class="k">function</span> () <span class="k">use</span> ($actor, $profile, $outcome, $reason, $endsOn) {
+            $evaluation = <span class="k">new</span> ProbationEvaluation;
+            $evaluation-&gt;<span class="f">forceFill</span>([
+                <span class="s">&#039;employee_profile_id&#039;</span> =&gt; $profile-&gt;id,
+                <span class="s">&#039;outcome&#039;</span> =&gt; $outcome,
+                <span class="s">&#039;reason&#039;</span> =&gt; $reason,
+                <span class="s">&#039;ends_on&#039;</span> =&gt; $endsOn?-&gt;<span class="f">toDateString</span>(),
+                <span class="s">&#039;status&#039;</span> =&gt; ProbationEvaluation::PENDING,
+                <span class="s">&#039;evaluated_by&#039;</span> =&gt; $actor-&gt;id,
+                <span class="s">&#039;evaluated_at&#039;</span> =&gt; CarbonImmutable::<span class="f">now</span>(),
+            ])-&gt;<span class="f">save</span>();
+
+            $this-&gt;audit-&gt;<span class="f">record</span>(AuditArea::People, <span class="s">&#039;probation.evaluated&#039;</span>, <span class="s">&quot;Probation evaluation for {$profile-&gt;name}: {$evaluation-&gt;outcomeLabel()}&quot;</span>, $evaluation, [<span class="s">&#039;outcome&#039;</span> =&gt; $outcome, <span class="s">&#039;reason&#039;</span> =&gt; $reason], causer: $actor);
+
+            <span class="k">return</span> $evaluation;
+        });
+
+        <span class="c">// HR evaluating: approved at once (they&#039;re the approver).</span>
+        <span class="k">if</span> (ProbationEvaluation::<span class="f">canDecide</span>($actor, $profile)) {
+            <span class="k">return</span> $this-&gt;decide-&gt;<span class="f">handle</span>($actor, $evaluation, approve: <span class="k">true</span>);
+        }
+
+        <span class="k">foreach</span> (User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Ability::ManagePeople-&gt;<span class="f">roles</span>())-&gt;<span class="f">get</span>() <span class="k">as</span> $hr) {
+            UpdateNotice::<span class="f">tell</span>($hr, $actor, <span class="s">&quot;Approve {$profile-&gt;name}&#039;s probation evaluation&quot;</span>,
+                <span class="s">&quot;{$actor-&gt;name}: {$evaluation-&gt;outcomeLabel()}. Decide before &quot;</span>.$endsOn?-&gt;<span class="f">format</span>(<span class="s">&#039;M j, Y&#039;</span>).<span class="s">&#039;, the end of probation.&#039;</span>,
+                <span class="f">route</span>(<span class="s">&#039;employees.show&#039;</span>, $profile), <span class="s">&#039;user&#039;</span>, email: <span class="k">true</span>);
+        }
+
+        <span class="k">return</span> $evaluation;
+    }
+}</code></pre></details>
+  <details class="file"><summary>app/Actions/People/DecideProbationEvaluation.php<span class="lines">89 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Actions\People;
+
+<span class="k">use</span> App\Enums\AuditArea;
+<span class="k">use</span> App\Enums\EmploymentStatus;
+<span class="k">use</span> App\Models\ProbationEvaluation;
+<span class="k">use</span> App\Models\User;
+<span class="k">use</span> App\Notifications\UpdateNotice;
+<span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\ProbationRules;
+<span class="k">use</span> Carbon\CarbonImmutable;
+<span class="k">use</span> Illuminate\Auth\Access\AuthorizationException;
+<span class="k">use</span> Illuminate\Support\Facades\DB;
+<span class="k">use</span> Illuminate\Validation\ValidationException;
+
+<span class="c">/**
+ * HR approves a probation evaluation, or sends it back to the head with a note.
+ *
+ *   pass, approved   Regular at once (early regularization only helps the employee); they&#039;re told.
+ *   fail, approved   only up to the probation&#039;s last day. The employee gets the written notice
+ *                    now, with the reasons; employment ends after that day (ApplyProbationEnds).
+ *   returned         the head is told why and may evaluate again.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> DecideProbationEvaluation
+{
+    <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(<span class="k">private</span> <span class="k">readonly</span> AuditLogger $audit) {}
+
+    <span class="k">public</span> <span class="k">function</span> <span class="f">handle</span>(User $actor, ProbationEvaluation $evaluation, bool $approve, string $note = <span class="s">&#039;&#039;</span>): ProbationEvaluation
+    {
+        $evaluation-&gt;<span class="f">loadMissing</span>([<span class="s">&#039;profile.user&#039;</span>, <span class="s">&#039;evaluator&#039;</span>]);
+        $profile = $evaluation-&gt;profile;
+
+        <span class="k">if</span> (! ProbationEvaluation::<span class="f">canDecide</span>($actor, $profile)) {
+            <span class="k">throw</span> <span class="k">new</span> AuthorizationException;
+        }
+
+        $note = <span class="f">trim</span>($note);
+        $endsOn = ProbationRules::<span class="f">endsOn</span>($profile);
+        $errors = <span class="f">array_filter</span>([
+            <span class="s">&#039;decision&#039;</span> =&gt; <span class="k">match</span> (<span class="k">true</span>) {
+                $evaluation-&gt;status !== ProbationEvaluation::PENDING =&gt; <span class="s">&#039;It was already decided.&#039;</span>,
+                $profile-&gt;employment_status !== EmploymentStatus::Probationary =&gt; <span class="s">&quot;{$profile-&gt;name} is no longer on probation.&quot;</span>,
+                $approve &amp;&amp; ! $evaluation-&gt;<span class="f">passes</span>() &amp;&amp; ($endsOn === <span class="k">null</span> || $endsOn-&gt;<span class="f">isBefore</span>(CarbonImmutable::<span class="f">today</span>())) =&gt; <span class="s">&#039;Probation already ended&#039;</span>.($endsOn ? <span class="s">&#039; on &#039;</span>.$endsOn-&gt;<span class="f">format</span>(<span class="s">&#039;M j, Y&#039;</span>) : <span class="s">&#039;&#039;</span>).<span class="s">&#039;: under the law they are Regular, so it can\&#039;t be ended for failing probation.&#039;</span>,
+                <span class="k">default</span> =&gt; <span class="k">null</span>,
+            },
+            <span class="s">&#039;decisionNote&#039;</span> =&gt; ! $approve &amp;&amp; <span class="f">mb_strlen</span>($note) &lt; <span class="n">10</span> ? <span class="s">&#039;Tell the head why it is sent back.&#039;</span> : <span class="k">null</span>,
+        ]);
+
+        <span class="k">if</span> ($errors !== []) {
+            <span class="k">throw</span> ValidationException::<span class="f">withMessages</span>($errors);
+        }
+
+        <span class="k">return</span> DB::<span class="f">transaction</span>(<span class="k">function</span> () <span class="k">use</span> ($actor, $evaluation, $approve, $note, $profile, $endsOn) {
+            $evaluation-&gt;<span class="f">forceFill</span>([
+                <span class="s">&#039;status&#039;</span> =&gt; $approve ? ProbationEvaluation::APPROVED : ProbationEvaluation::RETURNED,
+                <span class="s">&#039;decided_by&#039;</span> =&gt; $actor-&gt;id,
+                <span class="s">&#039;decided_at&#039;</span> =&gt; CarbonImmutable::<span class="f">now</span>(),
+                <span class="s">&#039;decision_note&#039;</span> =&gt; $note !== <span class="s">&#039;&#039;</span> ? $note : <span class="k">null</span>,
+            ])-&gt;<span class="f">save</span>();
+
+            $this-&gt;audit-&gt;<span class="f">record</span>(AuditArea::People, $approve ? <span class="s">&#039;probation.approved&#039;</span> : <span class="s">&#039;probation.returned&#039;</span>, ($approve ? <span class="s">&#039;Approved&#039;</span> : <span class="s">&#039;Sent back&#039;</span>).<span class="s">&quot; {$profile-&gt;name}&#039;s probation evaluation: {$evaluation-&gt;outcomeLabel()}&quot;</span>, $evaluation, <span class="f">array_filter</span>([<span class="s">&#039;note&#039;</span> =&gt; $note]), causer: $actor);
+
+            $url = <span class="f">route</span>(<span class="s">&#039;employees.show&#039;</span>, $profile);
+
+            <span class="k">if</span> (! $approve) {
+                UpdateNotice::<span class="f">tell</span>($evaluation-&gt;evaluator, $actor, <span class="s">&quot;Probation evaluation sent back: {$profile-&gt;name}&quot;</span>, <span class="s">&quot;HR: {$note}&quot;</span>, $url, <span class="s">&#039;user&#039;</span>, email: <span class="k">true</span>);
+
+                <span class="k">return</span> $evaluation;
+            }
+
+            <span class="k">if</span> ($evaluation-&gt;<span class="f">passes</span>()) {
+                $profile-&gt;<span class="f">forceFill</span>([<span class="s">&#039;employment_status&#039;</span> =&gt; EmploymentStatus::Regular])-&gt;<span class="f">save</span>();
+                $this-&gt;audit-&gt;<span class="f">record</span>(AuditArea::People, <span class="s">&#039;probation.regularized&#039;</span>, <span class="s">&quot;{$profile-&gt;name} is now Regular (probation passed)&quot;</span>, $profile, causer: $actor);
+                UpdateNotice::<span class="f">tellProfile</span>($profile, $actor, <span class="s">&#039;You are now a Regular employee&#039;</span>, <span class="s">&#039;You passed your probation. Congratulations! See it on My Profile.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;profile&#039;</span>), <span class="s">&#039;user&#039;</span>, email: <span class="k">true</span>);
+            } <span class="k">else</span> {
+                <span class="c">// The written notice, served before probation ends (Art. 296): the standards not met, and the last day.</span>
+                UpdateNotice::<span class="f">tellProfile</span>($profile, $actor, <span class="s">&#039;Notice: your probation will not lead to regular employment&#039;</span>,
+                    <span class="s">&#039;Your evaluation found that you did not meet the standards made known to you when you were hired: &#039;</span>.$evaluation-&gt;reason
+                    .<span class="s">&#039; Your employment ends after &#039;</span>.$endsOn?-&gt;<span class="f">format</span>(<span class="s">&#039;F j, Y&#039;</span>).<span class="s">&#039;, the last day of your probation. HR can tell you about your final pay and clearance.&#039;</span>,
+                    <span class="f">route</span>(<span class="s">&#039;profile&#039;</span>), <span class="s">&#039;user&#039;</span>, email: <span class="k">true</span>);
+            }
+
+            UpdateNotice::<span class="f">tell</span>($evaluation-&gt;evaluator, $actor, <span class="s">&quot;Probation evaluation approved: {$profile-&gt;name}&quot;</span>, $evaluation-&gt;<span class="f">outcomeLabel</span>().<span class="s">&#039;.&#039;</span>, $url, <span class="s">&#039;user&#039;</span>);
+
+            <span class="k">return</span> $evaluation;
+        });
+    }
+}</code></pre></details>
+  <details class="file"><summary>app/Actions/People/ApplyProbationEnds.php<span class="lines">76 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Actions\People;
+
+<span class="k">use</span> App\Enums\Ability;
+<span class="k">use</span> App\Enums\AuditArea;
+<span class="k">use</span> App\Enums\EmploymentStatus;
+<span class="k">use</span> App\Models\EmployeeProfile;
+<span class="k">use</span> App\Models\ProbationEvaluation;
+<span class="k">use</span> App\Models\User;
+<span class="k">use</span> App\Notifications\UpdateNotice;
+<span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\ProbationRules;
+<span class="k">use</span> Illuminate\Support\Facades\DB;
+
+<span class="c">/**
+ * Run daily, before the probation alerts. For everyone still Probationary after their
+ * probation&#039;s last day (Labor Code Art. 296; owner, 2026-10-24):
+ *
+ *   a failed evaluation HR approved in time   Terminated: employment ends, account closes
+ *   anything else                             Regular by law, automatically; a head&#039;s evaluation
+ *                                             still waiting for HR is closed
+ *
+ * The employee and HR are told. Idempotent: once applied, they&#039;re no longer Probationary.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> ApplyProbationEnds
+{
+    <span class="k">public</span> <span class="k">function</span> <span class="f">__construct</span>(<span class="k">private</span> <span class="k">readonly</span> AuditLogger $audit) {}
+
+    <span class="c">/**
+     * @return int how many probations were closed
+     */</span>
+    <span class="k">public</span> <span class="k">function</span> <span class="f">handle</span>(): int
+    {
+        $ids = EmployeeProfile::<span class="f">query</span>()-&gt;<span class="f">probationOverdue</span>()-&gt;<span class="f">pluck</span>(<span class="s">&#039;id&#039;</span>);
+        $hr = User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Ability::ManagePeople-&gt;<span class="f">roles</span>())-&gt;<span class="f">get</span>();
+
+        <span class="k">foreach</span> ($ids <span class="k">as</span> $id) {
+            DB::<span class="f">transaction</span>(<span class="k">function</span> () <span class="k">use</span> ($id, $hr) {
+                $profile = EmployeeProfile::<span class="f">query</span>()-&gt;<span class="f">with</span>(<span class="s">&#039;user&#039;</span>)-&gt;<span class="f">whereKey</span>($id)-&gt;<span class="f">lockForUpdate</span>()-&gt;<span class="f">first</span>();
+                $endsOn = $profile === <span class="k">null</span> ? <span class="k">null</span> : ProbationRules::<span class="f">endsOn</span>($profile);
+
+                <span class="k">if</span> ($profile === <span class="k">null</span> || $endsOn === <span class="k">null</span> || $profile-&gt;employment_status !== EmploymentStatus::Probationary) {
+                    <span class="k">return</span>;
+                }
+
+                $failed = $profile-&gt;<span class="f">probationEvaluations</span>()-&gt;<span class="f">where</span>(<span class="s">&#039;status&#039;</span>, ProbationEvaluation::APPROVED)-&gt;<span class="f">where</span>(<span class="s">&#039;outcome&#039;</span>, ProbationEvaluation::FAIL)-&gt;<span class="f">whereNull</span>(<span class="s">&#039;applied_at&#039;</span>)-&gt;<span class="f">first</span>();
+                $url = <span class="f">route</span>(<span class="s">&#039;employees.show&#039;</span>, $profile);
+
+                <span class="k">if</span> ($failed !== <span class="k">null</span>) {
+                    $profile-&gt;<span class="f">forceFill</span>([<span class="s">&#039;employment_status&#039;</span> =&gt; EmploymentStatus::Terminated])-&gt;<span class="f">save</span>();
+                    $failed-&gt;<span class="f">forceFill</span>([<span class="s">&#039;applied_at&#039;</span> =&gt; <span class="f">now</span>()])-&gt;<span class="f">save</span>();
+                    $this-&gt;audit-&gt;<span class="f">record</span>(AuditArea::People, <span class="s">&#039;probation.ended_employment&#039;</span>, <span class="s">&quot;{$profile-&gt;name}&#039;s employment ended: probation not passed (last day {$endsOn-&gt;format(&#039;M j, Y&#039;)})&quot;</span>, $profile, [<span class="s">&#039;evaluation_id&#039;</span> =&gt; $failed-&gt;id]);
+
+                    <span class="k">foreach</span> ($hr <span class="k">as</span> $person) {
+                        UpdateNotice::<span class="f">tell</span>($person, <span class="k">null</span>, <span class="s">&quot;Employment ended: {$profile-&gt;name}&quot;</span>, <span class="s">&quot;Probation not passed; the last day was {$endsOn-&gt;format(&#039;M j, Y&#039;)}. Start their final pay and clearance.&quot;</span>, $url, <span class="s">&#039;user&#039;</span>);
+                    }
+
+                    <span class="k">return</span>;
+                }
+
+                $profile-&gt;<span class="f">forceFill</span>([<span class="s">&#039;employment_status&#039;</span> =&gt; EmploymentStatus::Regular])-&gt;<span class="f">save</span>();
+                $profile-&gt;<span class="f">probationEvaluations</span>()-&gt;<span class="f">where</span>(<span class="s">&#039;status&#039;</span>, ProbationEvaluation::PENDING)
+                    -&gt;<span class="f">update</span>([<span class="s">&#039;status&#039;</span> =&gt; ProbationEvaluation::RETURNED, <span class="s">&#039;decision_note&#039;</span> =&gt; <span class="s">&#039;Probation ended before HR approved it: Regular by law.&#039;</span>, <span class="s">&#039;decided_at&#039;</span> =&gt; <span class="f">now</span>()]);
+                $this-&gt;audit-&gt;<span class="f">record</span>(AuditArea::People, <span class="s">&#039;probation.regularized&#039;</span>, <span class="s">&quot;{$profile-&gt;name} is now Regular: probation ended {$endsOn-&gt;format(&#039;M j, Y&#039;)} with no approved decision (Labor Code Art. 296)&quot;</span>, $profile);
+
+                UpdateNotice::<span class="f">tellProfile</span>($profile, <span class="k">null</span>, <span class="s">&#039;You are now a Regular employee&#039;</span>, <span class="s">&#039;Your probation ended on &#039;</span>.$endsOn-&gt;<span class="f">format</span>(<span class="s">&#039;F j, Y&#039;</span>).<span class="s">&#039;. See it on My Profile.&#039;</span>, <span class="f">route</span>(<span class="s">&#039;profile&#039;</span>), <span class="s">&#039;user&#039;</span>, email: <span class="k">true</span>);
+                <span class="k">foreach</span> ($hr <span class="k">as</span> $person) {
+                    UpdateNotice::<span class="f">tell</span>($person, <span class="k">null</span>, <span class="s">&quot;Now Regular: {$profile-&gt;name}&quot;</span>, <span class="s">&quot;Probation ended {$endsOn-&gt;format(&#039;M j, Y&#039;)} with no approved decision, so they are Regular by law.&quot;</span>, $url, <span class="s">&#039;user&#039;</span>);
+                }
+            });
+        }
+
+        <span class="k">return</span> $ids-&gt;<span class="f">count</span>();
+    }
+}</code></pre></details>
+  <details class="file"><summary>app/Support/ProbationRules.php<span class="lines">58 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Support;
+
+<span class="k">use</span> App\Models\EmployeeProfile;
+<span class="k">use</span> App\Models\Setting;
+<span class="k">use</span> Carbon\CarbonImmutable;
+
+<span class="c">/**
+ * The probation and training lengths HR sets in the app (Employees → Probation &amp; training
+ * rules, SaveProbationRules). Until HR changes them, the starting values in config/hr.php apply.
+ *
+ *   months              probation length, 1 to 6 (Labor Code Art. 296: never more than 6)
+ *   remind_days_before  when the head and HR are first told to evaluate
+ *   training_days       how long a Trainee trains before HR is told to move them on
+ *
+ * Both periods count from the hire date.
+ */</span>
+<span class="k">final</span> <span class="k">class</span> ProbationRules
+{
+    <span class="k">public</span> <span class="k">const</span> SETTING = <span class="s">&#039;probation&#039;</span>;
+
+    <span class="k">public</span> <span class="k">const</span> MAX_MONTHS = <span class="n">6</span>;
+
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">months</span>(): int
+    {
+        <span class="k">return</span> self::<span class="f">get</span>(<span class="s">&#039;months&#039;</span>);
+    }
+
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">remindDaysBefore</span>(): int
+    {
+        <span class="k">return</span> self::<span class="f">get</span>(<span class="s">&#039;remind_days_before&#039;</span>);
+    }
+
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">trainingDays</span>(): int
+    {
+        <span class="k">return</span> self::<span class="f">get</span>(<span class="s">&#039;training_days&#039;</span>);
+    }
+
+    <span class="c">/** The last day of probation; from the next day they&#039;re Regular unless a fail was approved. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">endsOn</span>(EmployeeProfile $profile): ?CarbonImmutable
+    {
+        <span class="k">return</span> $profile-&gt;hire_date === <span class="k">null</span> ? <span class="k">null</span> : CarbonImmutable::<span class="f">parse</span>($profile-&gt;hire_date)-&gt;<span class="f">addMonthsNoOverflow</span>(self::<span class="f">months</span>());
+    }
+
+    <span class="c">/** The day a Trainee&#039;s training is due to end. */</span>
+    <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">trainingEndsOn</span>(EmployeeProfile $profile): ?CarbonImmutable
+    {
+        <span class="k">return</span> $profile-&gt;hire_date === <span class="k">null</span> ? <span class="k">null</span> : CarbonImmutable::<span class="f">parse</span>($profile-&gt;hire_date)-&gt;<span class="f">addDays</span>(self::<span class="f">trainingDays</span>());
+    }
+
+    <span class="k">private</span> <span class="k">static</span> <span class="k">function</span> <span class="f">get</span>(string $key): int
+    {
+        $saved = Setting::<span class="f">value</span>(self::SETTING);
+
+        <span class="k">return</span> (int) ($saved[$key] ?? <span class="f">config</span>(<span class="s">&quot;hr.probation.{$key}&quot;</span>));
+    }
+}</code></pre></details>
+  <details class="file"><summary>app/Actions/People/SendProbationAlerts.php<span class="lines">93 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+
+<span class="k">namespace</span> App\Actions\People;
+
+<span class="k">use</span> App\Enums\Ability;
+<span class="k">use</span> App\Enums\AuditArea;
+<span class="k">use</span> App\Models\ProbationEvaluation;
 <span class="k">use</span> App\Models\SentAlert;
 <span class="k">use</span> App\Models\User;
 <span class="k">use</span> App\Notifications\ProbationEnding;
 <span class="k">use</span> App\Queries\People\ProbationEndingQuery;
 <span class="k">use</span> App\Services\AuditLogger;
+<span class="k">use</span> App\Support\Heads;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Support\Facades\DB;
 <span class="k">use</span> Illuminate\Support\Facades\Notification;
 
 <span class="c">/**
- * Run daily by the scheduler. Each alert goes out once, however often this runs:
+ * Run daily by the scheduler, after ApplyProbationEnds. To HR and the employee&#039;s head (who
+ * evaluates; HR approves). Each alert goes out once, however often this runs:
  *
- *   &quot;ending soon&quot;             30 days before          probation.upcoming
- *   &quot;ends today&quot;              on the day (or up to    probation.due
- *                             a week late, worded as
- *                             &quot;ended N days ago&quot;)
- *   &quot;ended N days ago&quot;        every 7 days after,     probation.overdue.1, .2, …
- *                             until HR changes the status
+ *   &quot;ending soon&quot;             the rules&#039; days before    probation.upcoming
+ *   &quot;ends today&quot;              on the day                probation.due
+ *   &quot;ended N days ago&quot;        only if the daily close   probation.overdue.1, .2, …
+ *                             didn&#039;t run (it makes them Regular)
+ *
+ * Nobody is reminded once a decision was approved.
  */</span>
 <span class="k">final</span> <span class="k">class</span> SendProbationAlerts
 {
@@ -9104,15 +9667,19 @@ flowchart LR
             <span class="k">return</span> <span class="n">0</span>;
         }
 
-        $recipients = User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Ability::ManagePeople-&gt;<span class="f">roles</span>())-&gt;<span class="f">get</span>();
+        $hr = User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Ability::ManagePeople-&gt;<span class="f">roles</span>())-&gt;<span class="f">get</span>();
         $sent = <span class="n">0</span>;
 
         <span class="k">foreach</span> ($profiles <span class="k">as</span> $profile) {
             $endsOn = ProbationEndingQuery::<span class="f">endsOn</span>($profile);
 
-            <span class="k">if</span> ($endsOn === <span class="k">null</span>) {
+            <span class="k">if</span> ($endsOn === <span class="k">null</span> || $profile-&gt;<span class="f">probationEvaluations</span>()-&gt;<span class="f">where</span>(<span class="s">&#039;status&#039;</span>, ProbationEvaluation::APPROVED)-&gt;<span class="f">exists</span>()) {
                 continue;
             }
+
+            <span class="c">// HR, and the head who evaluates (Operations for a guard); never the employee.</span>
+            $recipients = $hr-&gt;<span class="f">merge</span>($profile-&gt;user === <span class="k">null</span> ? [] : Heads::<span class="f">of</span>($profile-&gt;user))
+                -&gt;<span class="f">unique</span>(<span class="s">&#039;id&#039;</span>)-&gt;<span class="f">reject</span>(<span class="k">fn</span> (User $user) =&gt; $user-&gt;id === $profile-&gt;user_id)-&gt;<span class="f">values</span>();
 
             <span class="c">// Days since it ended: negative while still ahead. One alert name per week overdue,</span>
             <span class="c">// so the weekly reminder is sent once a week (each name only once).</span>
@@ -9202,12 +9769,13 @@ flowchart LR
         <span class="k">return</span> $row-&gt;wasRecentlyCreated;
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Queries/People/ProbationEndingQuery.php<span class="lines">38 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Queries/People/ProbationEndingQuery.php<span class="lines">40 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Queries\People;
 
 <span class="k">use</span> App\Enums\EmploymentStatus;
 <span class="k">use</span> App\Models\EmployeeProfile;
+<span class="k">use</span> App\Support\ProbationRules;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Database\Eloquent\Collection;
 
@@ -9224,10 +9792,11 @@ flowchart LR
     {
         <span class="c">// ends_on = hire_date + months, and we want ends_on - remind_days &lt;= today.</span>
         $latestHireDate = $today
-            -&gt;<span class="f">addDays</span>((int) <span class="f">config</span>(<span class="s">&#039;hr.probation.remind_days_before&#039;</span>))
-            -&gt;<span class="f">subMonthsNoOverflow</span>((int) <span class="f">config</span>(<span class="s">&#039;hr.probation.months&#039;</span>));
+            -&gt;<span class="f">addDays</span>(ProbationRules::<span class="f">remindDaysBefore</span>())
+            -&gt;<span class="f">subMonthsNoOverflow</span>(ProbationRules::<span class="f">months</span>());
 
         <span class="k">return</span> EmployeeProfile::<span class="f">query</span>()
+            -&gt;<span class="f">with</span>(<span class="s">&#039;user&#039;</span>)
             -&gt;<span class="f">where</span>(<span class="s">&#039;employment_status&#039;</span>, EmploymentStatus::Probationary)
             -&gt;<span class="f">whereNotNull</span>(<span class="s">&#039;hire_date&#039;</span>)
             -&gt;<span class="f">whereDate</span>(<span class="s">&#039;hire_date&#039;</span>, <span class="s">&#039;&lt;=&#039;</span>, $latestHireDate-&gt;<span class="f">toDateString</span>())
@@ -9237,15 +9806,16 @@ flowchart LR
 
     <span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="f">endsOn</span>(EmployeeProfile $profile): ?CarbonImmutable
     {
-        <span class="k">return</span> $profile-&gt;hire_date?-&gt;<span class="f">addMonthsNoOverflow</span>((int) <span class="f">config</span>(<span class="s">&#039;hr.probation.months&#039;</span>));
+        <span class="k">return</span> ProbationRules::<span class="f">endsOn</span>($profile);
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Notifications/ProbationEnding.php<span class="lines">90 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Notifications/ProbationEnding.php<span class="lines">91 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Notifications;
 
 <span class="k">use</span> App\Models\EmployeeProfile;
 <span class="k">use</span> App\Models\User;
+<span class="k">use</span> App\Support\ProbationRules;
 <span class="k">use</span> App\Support\WritesBellImmediately;
 <span class="k">use</span> Carbon\CarbonImmutable;
 <span class="k">use</span> Illuminate\Bus\Queueable;
@@ -9254,8 +9824,8 @@ flowchart LR
 <span class="k">use</span> Illuminate\Notifications\Notification;
 
 <span class="c">/**
- * Tells HR that an employee&#039;s probation ends soon, ends today, or ended and
- * is still undecided (weekly), so the regularization decision is made: under
+ * Tells HR and the employee&#039;s head that probation ends soon, ends today, or ended and
+ * is still undecided, so the head evaluates and HR approves in time: under
  * Labor Code Art. 296, someone allowed to keep working after probation is
  * regular by law, whatever their record says.
  */</span>
@@ -9292,7 +9862,7 @@ flowchart LR
             -&gt;<span class="f">greeting</span>(<span class="s">&quot;Hello {$notifiable-&gt;name},&quot;</span>)
             -&gt;<span class="f">line</span>($this-&gt;<span class="f">body</span>())
             -&gt;<span class="f">action</span>(<span class="s">&#039;Open employee record&#039;</span>, $this-&gt;<span class="f">url</span>())
-            -&gt;<span class="f">line</span>(<span class="s">&#039;Update the employment status once a decision is made.&#039;</span>);
+            -&gt;<span class="f">line</span>(<span class="s">&#039;Their head evaluates on the employee record; HR approves. With no approved decision by the last day, they become Regular automatically.&#039;</span>);
     }
 
     <span class="c">/**
@@ -9314,15 +9884,15 @@ flowchart LR
 
     <span class="k">private</span> <span class="k">function</span> <span class="f">body</span>(): string
     {
-        $months = (int) <span class="f">config</span>(<span class="s">&#039;hr.probation.months&#039;</span>);
+        $months = ProbationRules::<span class="f">months</span>();
         $who = <span class="s">&quot;{$this-&gt;profile-&gt;name} ({$this-&gt;profile-&gt;employee_number})&quot;</span>;
 
         <span class="k">if</span> ($this-&gt;daysPast &gt; <span class="n">0</span>) {
             <span class="k">return</span> <span class="s">&quot;{$who} passed {$months} months of probation on {$this-&gt;endsOn-&gt;format(&#039;M j, Y&#039;)} and is still marked Probationary. &quot;</span>
-                .<span class="s">&#039;Under Labor Code Art. 296, an employee allowed to keep working after probation becomes regular. Decide now.&#039;</span>;
+                .<span class="s">&#039;Under Labor Code Art. 296, an employee allowed to keep working after probation becomes regular.&#039;</span>;
         }
 
-        <span class="k">return</span> <span class="s">&quot;{$who} reaches {$months} months of probation on {$this-&gt;endsOn-&gt;format(&#039;M j, Y&#039;)}. Decide on regularization.&quot;</span>;
+        <span class="k">return</span> <span class="s">&quot;{$who} reaches {$months} months of probation on {$this-&gt;endsOn-&gt;format(&#039;M j, Y&#039;)}. Evaluate them before then: pass, or doesn&#039;t meet the standards.&quot;</span>;
     }
 
     <span class="k">private</span> <span class="k">function</span> <span class="f">url</span>(): string
@@ -14336,7 +14906,7 @@ flowchart TD
     <tr><td>Why not just pay clock-in to clock-out?</td><td>Then clocking in early or leaving late pads pay, and nobody is ever late. The duty is the yardstick; time beyond it is overtime and needs approval.</td></tr>
     <tr><td>A guard is late for a 22:00 duty and arrives at 00:30. Which day?</td><td>Last night's: the window includes yesterday's duty until it ends, so the log is dated the duty's day and 140 minutes late.</td></tr>
     <tr><td>How does a reliever clock in at someone else's post?</td><td>Assigning them creates a relief duty at the absent guard's client and post, so that geofence applies.</td></tr>
-    <tr><td>The hours aren't in the Duty list. Now what?</td><td><b>Custom time…</b> (last in the list) opens the same box HR uses on the employee record (<code>&lt;x-shift-hours&gt;</code>): common hours in one tap, Start / End, "9 hours · ends the next day", grace. It starts from the duty already picked. Saving goes through <code>ShiftForTimes</code>: the same hours reuse an existing shift (22:00–07:00 is Night Duty) instead of piling up "Custom" copies.</td></tr>
+    <tr><td>The hours aren't in the Duty list. Now what?</td><td><b>Custom time…</b> (last in the list) opens the same box HR uses on the employee record (<code>&lt;x-shift-hours&gt;</code>): common hours in one tap, Start / End, "9 hours · ends the next day", grace. It starts from the duty already picked. Saving goes through <code>ShiftForTimes</code>: the same hours reuse an existing shift (22:00–07:00 is Night Duty) instead of piling up copies. New hours become a shift named by them, like "9:00 AM – 6:00 PM".</td></tr>
     <tr><td>What is "Record by hand"?</td><td>Operations entering a duty's clock-in (and clock-out) when the guard's phone or GPS failed: a reason is required, it's marked <b>Manual</b>, audited, and never replaces a real selfie punch.</td></tr>
   </table></div>
   <details class="file"><summary>resources/views/components/shift-hours.blade.php<span class="lines">60 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>@<span class="f">props</span>([<span class="s">&#039;start&#039;</span>, <span class="s">&#039;end&#039;</span>, <span class="s">&#039;grace&#039;</span>])
@@ -14399,19 +14969,20 @@ flowchart TD
         @<span class="f">error</span>($grace) &lt;p <span class="k">class</span>=<span class="s">&quot;mt-1 text-sm text-red-600 dark:text-red-400&quot;</span>&gt;{{ $message }}&lt;/p&gt; @enderror
     &lt;/div&gt;
 &lt;/div&gt;</code></pre></details>
-  <details class="file"><summary>app/Actions/People/ShiftForTimes.php<span class="lines">43 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/People/ShiftForTimes.php<span class="lines">63 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\People;
 
 <span class="k">use</span> App\Actions\Settings\SaveShift;
 <span class="k">use</span> App\Models\Shift;
 <span class="k">use</span> App\Models\User;
+<span class="k">use</span> Illuminate\Support\Carbon;
 
 <span class="c">/**
  * HR typed an employee&#039;s times instead of picking a shift (&quot;Custom time&quot;).
  * Lateness, undertime and payroll all work from a Shift, so this returns
  * the shift with exactly those times and grace: an existing one if there
- * is one (no duplicates), else a new &quot;Custom&quot; shift, saved through
+ * is one (no duplicates), else a new shift named by its hours, saved through
  * SaveShift so it&#039;s audited and shows on the Shifts page like any other.
  */</span>
 <span class="k">final</span> <span class="k">class</span> ShiftForTimes
@@ -14434,12 +15005,31 @@ flowchart TD
             -&gt;<span class="f">first</span>();
 
         <span class="k">return</span> $existing ?? $this-&gt;saveShift-&gt;<span class="f">handle</span>(<span class="k">null</span>, [
-            <span class="s">&#039;name&#039;</span> =&gt; <span class="s">&#039;Custom&#039;</span>,
+            <span class="s">&#039;name&#039;</span> =&gt; $this-&gt;<span class="f">uniqueName</span>($start, $end, $graceMinutes),
             <span class="s">&#039;start_time&#039;</span> =&gt; $start,
             <span class="s">&#039;end_time&#039;</span> =&gt; $end,
             <span class="s">&#039;grace_minutes&#039;</span> =&gt; $graceMinutes,
             <span class="s">&#039;is_default&#039;</span> =&gt; <span class="k">false</span>,
         ], $actor);
+    }
+
+    <span class="c">/**
+     * Shift names are unique. Every new one used to be &quot;Custom&quot;, so the second set of typed
+     * hours crashed (pilot, 2026-10-24). Named by its hours instead: &quot;9:00 AM – 6:00 PM&quot;,
+     * then with its grace if those hours exist with another grace, then numbered.
+     */</span>
+    <span class="k">private</span> <span class="k">function</span> <span class="f">uniqueName</span>(string $start, string $end, int $graceMinutes): string
+    {
+        $hours = Carbon::<span class="f">parse</span>($start)-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>).<span class="s">&#039; – &#039;</span>.Carbon::<span class="f">parse</span>($end)-&gt;<span class="f">format</span>(<span class="s">&#039;g:i A&#039;</span>);
+        $name = $hours;
+        <span class="k">if</span> (Shift::<span class="f">query</span>()-&gt;<span class="f">where</span>(<span class="s">&#039;name&#039;</span>, $name)-&gt;<span class="f">exists</span>()) {
+            $name = <span class="s">&quot;{$hours} · {$graceMinutes} min grace&quot;</span>;
+        }
+        <span class="k">for</span> ($n = <span class="n">2</span>; Shift::<span class="f">query</span>()-&gt;<span class="f">where</span>(<span class="s">&#039;name&#039;</span>, $name)-&gt;<span class="f">exists</span>(); $n++) {
+            $name = <span class="s">&quot;{$hours} ({$n})&quot;</span>;
+        }
+
+        <span class="k">return</span> $name;
     }
 }</code></pre></details>
   <div class="try"><b>Try it</b><ol><li>As <code>opshq@example.test</code>: Duty Roster → click a day → Night Duty. Then another day → <b>Custom time…</b> → tap 7–4 and save.</li><li>As Maria: My Attendance shows the duty and the week; the dev-only simulate button stands at her post, so Clock In works.</li></ol></div>
@@ -16861,7 +17451,7 @@ flowchart TD
         <span class="k">return</span> $total;
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Queries/Dashboard/DashboardHighlightsQuery.php<span class="lines">126 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Queries/Dashboard/DashboardHighlightsQuery.php<span class="lines">127 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Queries\Dashboard;
 
@@ -16876,6 +17466,7 @@ flowchart TD
 <span class="k">use</span> App\Models\Training;
 <span class="k">use</span> App\Models\User;
 <span class="k">use</span> App\Queries\People\ProbationEndingQuery;
+<span class="k">use</span> App\Support\ProbationRules;
 <span class="k">use</span> Carbon\CarbonImmutable;
 
 <span class="c">/**
@@ -16922,7 +17513,7 @@ flowchart TD
 
             <span class="c">// The count includes those already past it; the hint says how many, since they&#039;re regular by law (Art. 296).</span>
             $overdue = EmployeeProfile::<span class="f">query</span>()-&gt;<span class="f">probationOverdue</span>()-&gt;<span class="f">count</span>();
-            $tiles[] = self::<span class="f">tile</span>(<span class="s">&#039;People&#039;</span>, <span class="s">&#039;Probation ending&#039;</span>, (string) $ending, $overdue &gt; <span class="n">0</span> ? <span class="s">&quot;{$overdue} already past &quot;</span>.<span class="f">config</span>(<span class="s">&#039;hr.probation.months&#039;</span>).<span class="s">&#039; months&#039;</span> : <span class="s">&#039;within &#039;</span>.<span class="f">config</span>(<span class="s">&#039;hr.probation.remind_days_before&#039;</span>).<span class="s">&#039; days&#039;</span>, <span class="f">route</span>(<span class="s">&#039;employees&#039;</span>, [<span class="s">&#039;status&#039;</span> =&gt; EmploymentStatus::Probationary-&gt;value]), $ending &gt; <span class="n">0</span> ? <span class="s">&#039;amber&#039;</span> : <span class="s">&#039;gray&#039;</span>, <span class="s">&#039;clock&#039;</span>);
+            $tiles[] = self::<span class="f">tile</span>(<span class="s">&#039;People&#039;</span>, <span class="s">&#039;Probation ending&#039;</span>, (string) $ending, $overdue &gt; <span class="n">0</span> ? <span class="s">&quot;{$overdue} already past &quot;</span>.ProbationRules::<span class="f">months</span>().<span class="s">&#039; months&#039;</span> : <span class="s">&#039;within &#039;</span>.ProbationRules::<span class="f">remindDaysBefore</span>().<span class="s">&#039; days&#039;</span>, <span class="f">route</span>(<span class="s">&#039;employees&#039;</span>, [<span class="s">&#039;status&#039;</span> =&gt; EmploymentStatus::Probationary-&gt;value]), $ending &gt; <span class="n">0</span> ? <span class="s">&#039;amber&#039;</span> : <span class="s">&#039;gray&#039;</span>, <span class="s">&#039;clock&#039;</span>);
             $tiles[] = self::<span class="f">tile</span>(<span class="s">&#039;People&#039;</span>, <span class="s">&#039;Hired this month&#039;</span>, (string) $hired, $today-&gt;<span class="f">format</span>(<span class="s">&#039;F Y&#039;</span>), <span class="f">route</span>(<span class="s">&#039;employees&#039;</span>), icon: <span class="s">&#039;user-plus&#039;</span>);
             $tiles[] = self::<span class="f">tile</span>(<span class="s">&#039;People&#039;</span>, <span class="s">&#039;No account yet&#039;</span>, (string) $noAccount, <span class="s">&#039;not registered&#039;</span>, <span class="f">route</span>(<span class="s">&#039;employees&#039;</span>, [<span class="s">&#039;account&#039;</span> =&gt; <span class="s">&#039;unregistered&#039;</span>]), $noAccount &gt; <span class="n">0</span> ? <span class="s">&#039;amber&#039;</span> : <span class="s">&#039;gray&#039;</span>, <span class="s">&#039;user&#039;</span>);
         }
@@ -18917,12 +19508,13 @@ stateDiagram-v2
         });
     }
 }</code></pre></details>
-  <details class="file"><summary>app/Actions/People/DecideNotice.php<span class="lines">97 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
+  <details class="file"><summary>app/Actions/People/DecideNotice.php<span class="lines">105 lines</span></summary><div class="bar"><span>Copied from the repository as it is today</span><button type="button" data-copy>Copy</button></div><pre><code>&lt;?php
 
 <span class="k">namespace</span> App\Actions\People;
 
 <span class="k">use</span> App\Enums\Ability;
 <span class="k">use</span> App\Enums\AuditArea;
+<span class="k">use</span> App\Enums\EmploymentStatus;
 <span class="k">use</span> App\Enums\NteOutcome;
 <span class="k">use</span> App\Models\MeritRecord;
 <span class="k">use</span> App\Models\MeritType;
@@ -18942,8 +19534,9 @@ stateDiagram-v2
  * reprimand, a suspension (days and from when), or dismissal. It can also give a
  * demerit from HR&#039;s list.
  *
- * Nothing is changed automatically beyond that: HR sets &quot;Terminated&quot; on the
- * employee record for a dismissal (and is told), and a suspension simply has no
+ * A dismissal makes the employee record Terminated, which closes their account
+ * (owner, 2026-10-24: Terminated comes only from due process, never picked by hand);
+ * HR is told to start clearance and final pay. A suspension simply has no
  * attendance to pay. The employee is told.
  */</span>
 <span class="k">final</span> <span class="k">class</span> DecideNotice
@@ -19004,8 +19597,14 @@ stateDiagram-v2
 
             $locked-&gt;user-&gt;<span class="f">notify</span>(<span class="k">new</span> <span class="f">NoticeToExplainNotice</span>($locked, NoticeToExplainNotice::DECIDED));
 
-            <span class="c">// A dismissal: HR updates the employee record (status, final pay, clearance).</span>
+            <span class="c">// A dismissal ends employment now; HR handles final pay and clearance.</span>
             <span class="k">if</span> ($decision === NteOutcome::Dismissal) {
+                $profile = $locked-&gt;user-&gt;employeeProfile;
+                <span class="k">if</span> ($profile !== <span class="k">null</span> &amp;&amp; $profile-&gt;employment_status-&gt;<span class="f">isActive</span>()) {
+                    $profile-&gt;<span class="f">forceFill</span>([<span class="s">&#039;employment_status&#039;</span> =&gt; EmploymentStatus::Terminated])-&gt;<span class="f">save</span>();
+                    $this-&gt;audit-&gt;<span class="f">record</span>(AuditArea::People, <span class="s">&#039;nte.terminated&#039;</span>, <span class="s">&quot;{$locked-&gt;user-&gt;name} is Terminated: dismissed after a Notice to Explain ({$locked-&gt;subject})&quot;</span>, $profile, causer: $actor);
+                }
+
                 $hr = User::<span class="f">query</span>()-&gt;<span class="f">notifiable</span>(Ability::ManagePeople-&gt;<span class="f">roles</span>())-&gt;<span class="f">whereKeyNot</span>($actor-&gt;id)-&gt;<span class="f">get</span>();
                 Notification::<span class="f">send</span>($hr, <span class="k">new</span> <span class="f">NoticeToExplainNotice</span>($locked, NoticeToExplainNotice::DISMISSAL_HR));
             }
@@ -21287,6 +21886,10 @@ flowchart LR
     <tr><td>A load test with 5,000 sample guards: the payroll run page took 1.8 s, of which only 0.28 s was the database. It loaded every employee, their rates and position history into PHP to find "who has no daily rate". The Attendance Log scanned 65,000 time logs to find open shifts.</td><td>Measure before fixing: render the page with every query timed, then compare total time with query time. Narrow in SQL first (only people with no personal rate can lack one): 1.8 s → 0.34 s. Index the columns lists filter on (<code>clock_out_at</code>): 541 → 237 ms. Test at the size you expect, on a copy, never on the real data.</td></tr>
     <tr><td>On the load test, background "Generate all" stopped at 0 of 4,911: "database is locked". The worker and the web page (saving its session on every 2-second poll) wrote at the same moment, and SQLite's default is to give up at once.</td><td>An app with a queue worker needs SQLite set for two writers: <code>busy_timeout</code> (wait instead of failing), WAL (reads don't block writes) and IMMEDIATE transactions (no upgrade deadlock), in <code>config/database.php</code>. It then finished 4,839 in 81 s. With WAL, back up with <code>VACUUM INTO</code> (<code>backup.php</code>), never a plain copy. A real browser test with the real worker found it; the sync-queue tests couldn't.</td></tr>
     <tr><td>Deployment Costs listed a guard's roster duties "up to today", but today's duty was missing. <code>duty_date</code> is a date column that SQLite stores as "2026-10-23 00:00:00", and as text that's greater than "2026-10-23".</td><td>Compare date columns by date: <code>whereDate('duty_date', '&lt;=', $today)</code>, not <code>whereBetween</code> with plain strings. Test the edge (today, tomorrow), not only the middle.</td></tr>
+    <tr><td>The owner asked whether the system could "force them to resign" after a failed probation, and HR could pick Terminated from a list. Yet no process ever set Terminated: a dismissal only told HR to do it by hand.</td><td>Status values with legal weight should come from the process that justifies them (a dismissal decision, an accepted resignation, an approved evaluation), not from a dropdown. Look for the process before removing the shortcut, or nothing is left that can do it. And when a request would be unlawful (pressuring a resignation is constructive dismissal), say so and offer the lawful version.</td></tr>
+    <tr><td>Adding a second employee with typed hours (9–6) crashed with a 500 on the pilot: every new shift was named "Custom", and shift names are unique. The first one worked, and so did every test, because no test ever made two.</td><td>A fixed value written into a column with a unique index works exactly once. Make the value from what makes the row different (here, the hours), and test the second time, not only the first.</td></tr>
+    <tr><td>Will 2,000 guards opening payslips at once crash the site? 60 at the same moment on the 5,000-guard copy: about 85 ms a page, all done in 5 s, no errors. But the 21st sign-in from one address was refused: the limit was 20 a minute per address.</td><td>Test the spike, not only one user: sign many in, then fire them together. A single-process server (the pilot's <code>php -S</code>) makes a spike wait in line rather than crash; real scale comes from more workers (Laravel Cloud). And check limits against how people really connect: guards share addresses on mobile data and site Wi-Fi, so a per-address limit set for one person at a desk blocks a shift change.</td></tr>
+    <tr><td>The owner wanted printed payslips that a bank could trust. The on-screen payslip blanks itself when printed, and a picture of a QR code alone proves nothing: anyone can make one.</td><td>Make the proof something only the system can make: an HMAC with the app key over the figures that matter, checked on a public page that shows only those figures. Then a forged code finds nothing, and a changed figure no longer matches. Show the least the checker needs (no government IDs), rate-limit the page, keep it out of search engines, and say so in the privacy notice. Give the QR only to final payslips.</td></tr>
     <tr><td>Deployment Costs let Operations pick a roster duty, then still edit the text under it. The owner asked why: a claim could then say one deployment while being linked to another relief.</td><td>Once something is picked from a list, show it locked with <b>Change</b>. Offer free typing only as an explicit last choice ("Not on the roster? Type it"). The data stays tied to what was really picked. And no case should skip the choices: a guard with no roster duties still gets their post and the client list first. Typing comes last.</td></tr>
     <tr><td>The "I certify" checkbox glared white in dark mode. A native checkbox ignores <code>bg-</code> classes, so <code>dark:bg-gray-800</code> did nothing.</td><td>Draw checkboxes and radios once, globally, with <code>appearance: none</code> (in <code>app.css</code>). Keep those rules <b>outside</b> Tailwind's layers, because unlayered CSS beats utilities, so a leftover class can't hide the tick. Set <code>color-scheme: dark</code> on <code>.dark</code> for the rest of the native controls.</td></tr>
     <tr><td>Every error page said "Go to the dashboard", but guards have no dashboard and a visitor may be signed out.</td><td>A button's label must be true for everyone who sees it. Point it at a route that decides (<code>/home</code>: sign-in, My Attendance or the Dashboard) and name it neutrally. An error page can't reliably check who's signed in: a 404 often never starts the session.</td></tr>
@@ -21418,6 +22021,9 @@ flowchart LR
     ['Operations hands a guard two uniform polos. Who decides how much each payslip takes?', ['Operations, when issuing', 'Accounting, final (SetUniformCharge); then the guard authorizes it', 'HR', 'Nobody: the whole price is taken from the next payslip'], 1, 'The issuer has no money fields. Accounting is told, sets the amount per payslip (up to the total), and the guard must still authorize it before anything is deducted (Art. 113).'],
     ['A guard adds boots (size 42) and a flashlight to the cart, goes to My Payslips, then comes back. What happens to the cart?', ['It\'s empty: Livewire state lives only on the page', 'It\'s still there: the cart property is #[Session], kept for the session', 'It was sent automatically', 'Only the boots are kept'], 1, 'Livewire\'s #[Session] attribute stores the property in the session, so the cart survives navigation. Sending it turns each line into a request, with one bell for the issuers.'],
     ['A guard\'s company flashlight is reported damaged on Monday. When can Operations charge them?', ['Right away, since it was issued to them', 'Once the guard explains or 5 days pass, and only the actual loss, at most 20% of a week\'s wages per payslip', 'Only if the guard signs a new authority to deduct', 'Never: company property is never charged'], 1, 'DOLE\'s conditions for deducting a loss: shown responsible, heard, never more than the loss, at most 20% of a week\'s wages. DecideEquipmentIncident enforces each one.'],
+    ['A guard\'s probation ends Nov 1. Operations evaluated "doesn\'t meet the standards" on Oct 20, but HR only opens it on Nov 3. What happens?', ['HR approves it and the guard is terminated', 'Nothing can be approved: on Nov 2 the daily check made the guard Regular by law and closed the waiting evaluation', 'The guard stays Probationary until HR decides', 'Operations decides alone'], 1, 'Art. 296: working past probation makes them regular. DecideProbationEvaluation refuses a fail after the last day, and ApplyProbationEnds makes the record match the law.'],
+    ['At 7 AM, 30 guards at one mall sign in on the same site Wi-Fi within a minute. What happens?', ['The 21st is told "Too many attempts"', 'All 30 sign in: the limit is 60 a minute per address, and 5 a minute per account', 'Only the first 5 get in', 'The Wi-Fi address is blocked for the day'], 1, 'FortifyServiceProvider allows 60 sign-ins a minute from one address (raised from 20 on 2026-10-24, because mobile data and site Wi-Fi share addresses) and 5 tries a minute for one account.'],
+    ['A guard retypes a printed payslip, changing the net pay from ₱8,142.30 to ₱12,142.30, and keeps the same QR code. What does the bank see when it scans it?', ['"Not verified"', '"Verified" with net pay ₱8,142.30, which doesn\'t match the paper', 'The changed figure ₱12,142.30', 'Nothing: the QR stops working'], 1, 'The code vouches for the figures stored in the system, and the check page shows them. The paper was changed, not the database, so the code is still valid, but the bank sees a different net pay and knows the paper was altered. If the database figures had been changed instead, the code would no longer match.'],
     ['The Accounting clerk files overtime. Who decides it, and what does HR see?', ['HR decides it', 'The President or VP decide it; HR sees it, view only', 'Operation HQ decides it', 'Nobody: office staff can\'t file overtime'], 1, 'Heads: Accounting (like HR and Operation HQ) answers to the President or VP. HR sees every non-HR staffer\'s requests (constrainOfficeStaffSeenBy) but canDecideFor says no, so the row shows "View only".'],
     ['A Satellite Operation files leave. Who decides it?', ['HR, after Operation HQ endorses it', 'Operation HQ, their head, outright', 'The President or VP', 'Their own region\'s Satellite'], 1, 'Heads: a Satellite\'s head is Operation HQ. LeaveRouting starts it at stage hq, and for office staff that stage decides (EndorseLeaveRequest skips office staff). HR still reads it; the President or VP monitor it.'],
     ['An Accounting clerk is still clocked in two hours after their shift ended. Who has been told?', ['Nobody: it only shows on the Attendance Log', 'The clerk (after 30 min), then HR, their head (after 2 hours)', 'Operation HQ', 'The President or VP'], 1, 'SendAttendanceAlerts reminds the employee first, then their head: HR for office staff like Accounting, the President or VP for HR, Operation HQ for a Satellite, both Operations for a guard. The minutes are HR\'s Alert rules.'],

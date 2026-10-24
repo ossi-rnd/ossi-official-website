@@ -4,6 +4,7 @@ namespace App\Actions\People;
 
 use App\Enums\Ability;
 use App\Enums\AuditArea;
+use App\Enums\EmploymentStatus;
 use App\Enums\NteOutcome;
 use App\Models\MeritRecord;
 use App\Models\MeritType;
@@ -23,8 +24,9 @@ use Illuminate\Validation\ValidationException;
  * reprimand, a suspension (days and from when), or dismissal. It can also give a
  * demerit from HR's list.
  *
- * Nothing is changed automatically beyond that: HR sets "Terminated" on the
- * employee record for a dismissal (and is told), and a suspension simply has no
+ * A dismissal makes the employee record Terminated, which closes their account
+ * (owner, 2026-10-24: Terminated comes only from due process, never picked by hand);
+ * HR is told to start clearance and final pay. A suspension simply has no
  * attendance to pay. The employee is told.
  */
 final class DecideNotice
@@ -85,8 +87,14 @@ final class DecideNotice
 
             $locked->user->notify(new NoticeToExplainNotice($locked, NoticeToExplainNotice::DECIDED));
 
-            // A dismissal: HR updates the employee record (status, final pay, clearance).
+            // A dismissal ends employment now; HR handles final pay and clearance.
             if ($decision === NteOutcome::Dismissal) {
+                $profile = $locked->user->employeeProfile;
+                if ($profile !== null && $profile->employment_status->isActive()) {
+                    $profile->forceFill(['employment_status' => EmploymentStatus::Terminated])->save();
+                    $this->audit->record(AuditArea::People, 'nte.terminated', "{$locked->user->name} is Terminated: dismissed after a Notice to Explain ({$locked->subject})", $profile, causer: $actor);
+                }
+
                 $hr = User::query()->notifiable(Ability::ManagePeople->roles())->whereKeyNot($actor->id)->get();
                 Notification::send($hr, new NoticeToExplainNotice($locked, NoticeToExplainNotice::DISMISSAL_HR));
             }
